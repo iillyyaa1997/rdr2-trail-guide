@@ -77,7 +77,7 @@ void init(const KvFile& ini) {
     S.method[int(Mode::Horse)] = int(ini.getInt("HorseMethod", 5));
     S.method[int(Mode::Foot)] = int(ini.getInt("FootMethod", 0));
     S.method[int(Mode::Wagon)] = int(ini.getInt("WagonMethod", 0));
-    S.legLength = float(ini.getFloat("LegLength", 300));
+    S.legLength = float(ini.getFloat("LegLength", 150));
     S.roadSnap = ini.getBool("RoadSnap", false);
     S.stopOnDanger = ini.getBool("StopOnDanger", true);
     S.stopOnTakeover = ini.getBool("StopOnTakeover", true);
@@ -88,7 +88,7 @@ void init(const KvFile& ini) {
     S.takeoverMs = int(ini.getInt("TakeoverMs", 250));
     S.damage = int(ini.getInt("DamageToStop", 3));
     S.noticeMs = int(ini.getInt("NoticeMs", 3000));
-    S.stuckMs = int(ini.getInt("StuckMs", 9000));
+    S.stuckMs = int(ini.getInt("StuckMs", 6000));
     S.stuckTries = int(ini.getInt("StuckTries", 4));
     S.wagonFlags = int(ini.getInt("WagonDrivingFlags", 0));
     for (int i = 0; i < 4; ++i) g_stepNow[i] = S.step[i];
@@ -107,6 +107,7 @@ static Ped g_horse = 0;
 static Vehicle g_wagon = 0;
 static int g_health = 0, g_horseHealth = 0, g_healthAt = 0;
 static float g_best = 1e9f;
+static Vector3 g_stuckPos;  // where Arthur was when he last moved 4 m
 static int g_bestAt = 0, g_tries = 0;
 static int g_nextCheck = 0, g_nextScan = 0, g_moveSince = 0;
 static bool g_armed = false;  // the stick was let go after the start (a held stick does not stop it at once)
@@ -253,7 +254,6 @@ static void reinsPath(Ped horse, const Vector3& from) {
             TG_DEBUG("path %d: %d points in %d ms", R.request, n, t - R.requestAt);
             R.request = 0;
             R.fails = 0;
-            g_legScale = 1.0f;
         } else if (t - R.requestAt > 3000 || (t - R.requestAt > 500 && PATH::_NAVMESH_REQUESTED_PATH_QUERY_STATUS(R.request) == 1)) {
             // no path to this leg end: straight on for now, and a shorter leg next time
             TG_DEBUG("path %d not found (status %d, %d ms): straight to the leg", R.request,
@@ -365,6 +365,7 @@ static void begin(Mode m, const Vector3& target) {
     g_healthAt = now();
     g_best = dist2d(pos(pl), g_leg);
     g_bestAt = now();
+    g_stuckPos = pos(pl);
     g_tries = 0;
     g_moveSince = 0;
     g_armed = input::moveAmount() < 0.2f;
@@ -573,18 +574,21 @@ void tick() {
     float legLeft = dist2d(me, g_leg);
     bool detour = now() < g_detourUntil && legLeft > 8.0f;  // a detour runs to its end (or 20 s) before the next leg
     if (S.legLength > 0 && !detour && legLeft < std::max(30.0f, S.legLength * g_legScale * 0.3f) && dist2d(g_leg, g_target) > 1.0f) {
+        g_legScale = std::min(1.0f, g_legScale * 1.5f);  // a leg done: longer again, step by step
         g_leg = nextLeg(me);
         g_best = dist2d(me, g_leg);
-        g_bestAt = now();
         issue();
         TG_DEBUG("next leg %.1f %.1f, %.0f m", g_leg.x, g_leg.y, g_best);
         return;
     }
     // stuck: no progress for StuckMs → the task again; after StuckTries, the player takes over
-    if (legLeft < g_best - 2.0f) {
-        g_best = legLeft;
+    if (dist2d(me, g_stuckPos) > 4.0f) {
+        g_stuckPos = me;
         g_bestAt = now();
-        g_tries = 0;
+        if (legLeft < g_best - 2.0f) {
+            g_best = legLeft;
+            g_tries = 0;
+        }
     } else if (now() - g_bestAt > S.stuckMs) {
         if (++g_tries > S.stuckTries) return end("stuck");
         TG_INFO("no progress for %d ms (%.0f m left), try %d", S.stuckMs, legLeft, g_tries);
