@@ -13,22 +13,25 @@ Status: ✅ works in game (checked, date) · 🟡 built, partly checked · ⬜ b
 
 ## Ways to travel
 - ✅ On horseback: the reins (the mod moves the horse's stick along a navmesh path; game tasks leave a ridden horse
-  standing — checked 17.11 for five kinds of tasks)
+  standing — checked 17.11 for five kinds of tasks). Steering through the gamepad (XInput override, the game's
+  pad mode) and through the game's control values (keyboard mode) — both checked 17.11; the horse reads the stick
+  as seen from the camera
 - ✅ On foot: the game's navmesh walk (checked 17.11: 40 m, 1.4 m/s)
-- ⬜ Driving a wagon or a coach
-- 🟡 Long trips in legs of 300 m (the navmesh is only near Arthur)
+- ✅ Driving a wagon or a coach: the same reins (CART01, 4.5–5 m/s at the middle speed, 17.11)
+- 🟡 Long trips in legs of 150 m (the navmesh is only near Arthur): 1.4 km test rode 250 m of open ground at a
+  gallop, then got stuck in rocks; fixed stuck detection + back-away/detours after that, not re-ridden ⬜
 - 🚫 Following roads like the GPS line: the game gives no way to read its route, and the road snap native returned
   nothing (17.11). The path goes across country around obstacles
 
 ## Speed
 - ✅ Three speeds, next one with D-pad right / L (checked: L switched trot → gallop 17.11)
-- ✅ Trot held at 4.6 m/s (17.11); walk and gallop ⬜ measured
+- ✅ Trot 4.2–5.0 m/s, gallop 8–9 m/s (17.11); walk ⬜ measured (1.5 m/s with a plain forward stick)
 - Starting speeds: horse trot, on foot walk, wagon medium (TrailGuide.ini)
 
 ## Danger
 - ✅ A predator within 35 m stops it (wolf at 28 m, 17.11)
 - ⬜ Someone attacking you
-- ⬜ You or the horse getting hurt
+- ⬜ You or the horse getting hurt (a hit within a second; the slow drain of an empty health core no longer counts)
 - ⬜ Falling off the horse
 - Threats that were already near when you started are ignored (so you can ride away from them)
 
