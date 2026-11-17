@@ -3,8 +3,8 @@
 Status: ✅ works in game (checked, date) · 🟡 built, partly checked · ⬜ built, not checked yet · 🚫 not possible / dropped
 
 ## Start and stop
-- ✅ Start/stop toward the map waypoint with one press (keyboard K checked 17.11; gamepad D-pad left read through XInput, not
-  checked with a real pad yet ⬜)
+- ✅ Start/stop toward the map waypoint with one press (keyboard K checked 17.11 with a real waypoint; gamepad D-pad left
+  read through XInput, not pressed on a real pad yet ⬜)
 - ✅ Without a waypoint: notice «Автопилот: сначала поставь метку на карте» (code path; the text shows like the others)
 - ✅ Short notices top left, 3 s, Russian/English by the game's language
 - ✅ Stops when you move: WASD (checked 17.11) or the left stick past half for a quarter second (XInput, ⬜ real pad)
@@ -30,13 +30,14 @@ Status: ✅ works in game (checked, date) · 🟡 built, partly checked · ⬜ b
 
 ## Danger
 - ✅ A predator within 35 m stops it (wolf at 28 m, 17.11)
-- ⬜ Someone attacking you
+- ✅ Someone attacking you (a bandit at 24 m: «Автопилот: опасность!», 17.11)
 - ⬜ You or the horse getting hurt (a hit within a second; the slow drain of an empty health core no longer counts)
 - ⬜ Falling off the horse
 - Threats that were already near when you started are ignored (so you can ride away from them)
 
 ## Company
-- ✅ The Frontier Dog companion follows at a trot (3–17 m behind, 17.11); ⬜ at a gallop over a long trip
+- ✅ The Frontier Dog companion follows at a trot (3–17 m behind, 17.11); at a gallop it falls 80–120 m behind (Frontier
+  Dog brings it back on its own)
 
 ## Camera
 - ⬜ CinematicCamera=1 turns the game's cinematic camera on while it runs; the game's own cinematic button works anyway
