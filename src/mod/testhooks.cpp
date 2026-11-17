@@ -20,6 +20,13 @@ using namespace game;
 std::string asiDir();  // main.cpp
 
 static std::vector<Ped> g_spawned;
+struct Fake {
+    Hash control;
+    float value;
+    int until;
+};
+static std::vector<Fake> g_fakes;  // control values pushed every frame (input simulation tests)
+static int g_path = 0, g_pathAt = 0;
 static std::vector<Vehicle> g_vehicles;
 static int g_ctlUntil = 0, g_ctlNext = 0;
 
@@ -124,12 +131,53 @@ static void run(const std::vector<std::string>& a) {
         CLOCK::SET_CLOCK_TIME(int(num(1, 12)), 0, 0);
     } else if (cmd == "heal") {
         ENTITY::SET_ENTITY_HEALTH(pl, ENTITY::GET_ENTITY_MAX_HEALTH(pl, false), 0);
+    } else if (cmd == "control") {
+        // control <0|1> [flags]: SET_PLAYER_CONTROL (does a task on the mounted player drive the horse then?)
+        PLAYER::SET_PLAYER_CONTROL(PLAYER::PLAYER_ID(), num(1, 1) != 0, int(num(2, 256)), false);
+        TG_INFO("test: player control %d flags %d -> on %d", int(num(1, 1)), int(num(2, 256)), int(PLAYER::IS_PLAYER_CONTROL_ON(PLAYER::PLAYER_ID())));
+    } else if (cmd == "mstate") {
+        PLAYER::_SET_PLAYER_MOUNT_STATE_ACTIVE(PLAYER::PLAYER_ID(), num(1, 1) != 0);
+        TG_INFO("test: mount state %d", int(num(1, 1)));
+    } else if (cmd == "fake" && a.size() >= 4) {
+        // fake <INPUT_NAME> <value> <seconds>: SET_CONTROL_VALUE_NEXT_FRAME every frame
+        g_fakes.push_back({MISC::GET_HASH_KEY(a[1].c_str()), float(num(2, 1)), now() + int(num(3, 3) * 1000)});
+        TG_INFO("test: fake %s = %.2f for %.1f s", a[1].c_str(), num(2, 1), num(3, 3));
+    } else if (cmd == "path" && a.size() >= 3) {
+        float x = float(num(1, 0)), y = float(num(2, 0)), z = p.z;
+        float gz;
+        if (MISC::GET_GROUND_Z_FOR_3D_COORD(x, y, 1000.0f, &gz, false)) z = gz;
+        g_path = PATH::NAVMESH_REQUEST_PATH(pl, p.x, p.y, p.z, x, y, z, int(num(3, 0)));
+        g_pathAt = now();
+        TG_INFO("test: path request %d to %.1f %.1f %.1f", g_path, x, y, z);
+    } else if (cmd == "gps" && a.size() >= 3) {
+        Vector3 out;
+        BOOL ok = MAP::_FIND_CLOSEST_GPS_POSITION(float(num(1, 0)), float(num(2, 0)), p.z, &out);
+        TG_INFO("test: gps near %.1f %.1f -> %d %.1f %.1f %.1f (%.0f m)", num(1, 0), num(2, 0), int(ok), out.x, out.y, out.z,
+                dist2d(out, Vector3(float(num(1, 0)), float(num(2, 0)), 0)));
     } else {
         TG_INFO("test: unknown '%s'", cmd.c_str());
     }
 }
 
 void tick() {
+    for (size_t i = 0; i < g_fakes.size();) {
+        if (now() > g_fakes[i].until) { g_fakes.erase(g_fakes.begin() + i); continue; }
+        PAD::SET_CONTROL_VALUE_NEXT_FRAME(0, g_fakes[i].control, g_fakes[i].value);
+        ++i;
+    }
+    if (g_path && now() - g_pathAt > 100) {
+        int st = PATH::_NAVMESH_REQUESTED_PATH_QUERY_STATUS(g_path);
+        if (PATH::_NAVMESH_REQUESTED_PATH_WAYPOINTS_FOUND(g_path) || now() - g_pathAt > 8000) {
+            int n = PATH::_NAVMESH_REQUESTED_PATH_NUM_WAYPOINTS(g_path);
+            TG_INFO("test: path %d status %d found %d, %d points after %d ms", g_path, st,
+                    int(PATH::_NAVMESH_REQUESTED_PATH_WAYPOINTS_FOUND(g_path)), n, now() - g_pathAt);
+            for (int i = 0; i < n && i < 60; ++i) {
+                Vector3 w = PATH::_NAVMESH_REQUESTED_PATH_WAYPOINT_BY_INDEX(g_path, i);
+                TG_INFO("test:   %d: %.1f %.1f %.1f", i, w.x, w.y, w.z);
+            }
+            g_path = 0;
+        }
+    }
     if (now() < g_ctlUntil && now() >= g_ctlNext) {
         g_ctlNext = now() + 500;
         TG_INFO("ctl: %s", input::describe().c_str());

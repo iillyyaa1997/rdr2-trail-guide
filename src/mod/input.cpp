@@ -43,6 +43,16 @@ static float g_stick = 0;
 static bool g_connected = false;
 static Hash g_moveControls[6] = {};
 static float g_deadzone = 0.5f;
+static int g_moveKeys[8] = {};
+static int g_moveKeyCount = 0;
+
+// the game window has the focus (keyboard state of other windows must not stop the autopilot)
+static bool gameFocused() {
+    HWND w = GetForegroundWindow();
+    DWORD pid = 0;
+    if (w) GetWindowThreadProcessId(w, &pid);
+    return pid == GetCurrentProcessId();
+}
 
 static WORD buttonBit(const std::string& n) {
     static const struct { const char* name; WORD bit; } kNames[] = {
@@ -98,6 +108,9 @@ void init(const KvFile& ini) {
     g_toggleKey = parseKey(ini.get("ToggleKey", "K"));
     g_speedKey = parseKey(ini.get("SpeedKey", "L"));
     g_deadzone = float(ini.getFloat("TakeoverStick", 0.5));
+    g_moveKeyCount = 0;
+    for (auto& k : str::split(ini.get("TakeoverKeys", "W,A,S,D"), ','))
+        if (DWORD vk = parseKey(k); vk && g_moveKeyCount < 8) g_moveKeys[g_moveKeyCount++] = int(vk);
     for (const wchar_t* dll : {L"xinput1_4.dll", L"xinput1_3.dll", L"xinput9_1_0.dll"}) {
         g_xinput = LoadLibraryW(dll);
         if (g_xinput) {
@@ -150,10 +163,9 @@ void poll() {
     if (g_fakeToggle) { g_toggleNow = true; g_fakeToggle = false; }
     if (g_fakeSpeed) { g_speedNow = true; g_fakeSpeed = false; }
     g_move = g_stick;
-    for (Hash h : g_moveControls) {
-        float v = std::fabs(PAD::GET_DISABLED_CONTROL_NORMAL(0, h));
-        if (v > g_move) g_move = v;
-    }
+    if (gameFocused())
+        for (int i = 0; i < g_moveKeyCount; ++i)
+            if (GetAsyncKeyState(g_moveKeys[i]) & 0x8000) g_move = 1.0f;
 }
 
 bool togglePressed() { return g_toggleNow; }

@@ -28,6 +28,9 @@ struct Settings {
     float predatorRange = 35, threatRange = 60, takeover = 0.5f;
     int takeoverMs = 250, damage = 3, noticeMs = 3000, stuckMs = 9000, stuckTries = 4;
     int wagonFlags = 0;
+    float gait[3] = {1.6f, 4.5f, 9.0f};  // reins: horse speed (m/s) held at each step
+    int repathMs = 3000, tapMs = 600, brakeMs = 50;
+    float pointReach = 5, steerDeg = 35;
 };
 static Settings S;
 static int g_stepNow[4] = {0, 1, 1, 1};  // current speed per mode (a change stays until the game restarts)
@@ -44,6 +47,16 @@ static void loadSpeeds(const KvFile& ini, const char* key, Mode m, const char* d
 
 void init(const KvFile& ini) {
     loadSpeeds(ini, "HorseSpeeds", Mode::Horse, "1.0,2.0,3.0");
+    {
+        std::vector<double> g = ini.getFloats("HorseGaits");
+        if (g.size() == 3)
+            for (int i = 0; i < 3; ++i) S.gait[i] = float(g[i]);
+    }
+    S.repathMs = int(ini.getInt("RepathMs", 3000));
+    S.tapMs = int(ini.getInt("SpeedTapMs", 600));
+    S.brakeMs = int(ini.getInt("BrakeTapMs", 50));
+    S.steerDeg = float(ini.getFloat("SteerDegrees", 35));
+    S.pointReach = float(ini.getFloat("PointReach", 5));
     loadSpeeds(ini, "FootSpeeds", Mode::Foot, "1.0,2.0,3.0");
     loadSpeeds(ini, "WagonSpeeds", Mode::Wagon, "4,7,11");
     auto clampStep = [](long long v) { return int(std::min<long long>(3, std::max<long long>(1, v))) - 1; };
@@ -53,11 +66,11 @@ void init(const KvFile& ini) {
     S.arrive[int(Mode::Horse)] = float(ini.getFloat("ArriveHorse", 12));
     S.arrive[int(Mode::Foot)] = float(ini.getFloat("ArriveFoot", 3));
     S.arrive[int(Mode::Wagon)] = float(ini.getFloat("ArriveWagon", 15));
-    S.method[int(Mode::Horse)] = int(ini.getInt("HorseMethod", 0));
+    S.method[int(Mode::Horse)] = int(ini.getInt("HorseMethod", 5));
     S.method[int(Mode::Foot)] = int(ini.getInt("FootMethod", 0));
     S.method[int(Mode::Wagon)] = int(ini.getInt("WagonMethod", 0));
-    S.legLength = float(ini.getFloat("LegLength", 0));
-    S.roadSnap = ini.getBool("RoadSnap", true);
+    S.legLength = float(ini.getFloat("LegLength", 300));
+    S.roadSnap = ini.getBool("RoadSnap", false);
     S.stopOnDanger = ini.getBool("StopOnDanger", true);
     S.stopOnTakeover = ini.getBool("StopOnTakeover", true);
     S.cinematic = ini.getBool("CinematicCamera", false);
@@ -172,6 +185,102 @@ static Vector3 nextLeg(const Vector3& from) {
     return withGround(p, from.z);
 }
 
+// ------------------------------------------------------------------------------------------------ reins (horse)
+// A task given to the mounted player does not move a player's horse (window 17.11: status 'performing' at 0 m/s, with
+// and without player control, on Arthur and on the horse); the stick does (a simulated stick walked it at 1.5 m/s).
+// So the reins push the horse's stick every frame along a navmesh path and tap the speed button to hold the gait.
+static Hash kHorseLR = 0, kHorseUD = 0, kHorseSprint = 0, kHorseStop = 0;
+struct Reins {
+    int request = 0, requestAt = 0, nextRequest = 0;
+    std::vector<Vector3> pts;
+    size_t idx = 0;
+    int tapUntil = 0, nextTap = 0, brakeUntil = 0, nextBrake = 0;
+    float want = 0, cam = 0;
+};
+static Reins R;
+static int g_postBrakeUntil = 0;  // a short pull on the reins after arriving
+
+static float headingTo(const Vector3& from, const Vector3& to) {
+    return std::atan2(-(to.x - from.x), to.y - from.y) * 57.2957795f;  // the game's heading: 0 north, 90 west
+}
+static float wrap180(float a) {
+    while (a > 180) a -= 360;
+    while (a < -180) a += 360;
+    return a;
+}
+
+static void reinsReset() {
+    R = Reins{};
+    if (!kHorseLR) {
+        kHorseLR = MISC::GET_HASH_KEY("INPUT_HORSE_MOVE_LR");
+        kHorseUD = MISC::GET_HASH_KEY("INPUT_HORSE_MOVE_UD");
+        kHorseSprint = MISC::GET_HASH_KEY("INPUT_HORSE_SPRINT");
+        kHorseStop = MISC::GET_HASH_KEY("INPUT_HORSE_STOP");
+    }
+}
+
+static void reinsPath(Ped horse, const Vector3& from) {
+    int t = now();
+    if (R.request) {
+        if (PATH::_NAVMESH_REQUESTED_PATH_WAYPOINTS_FOUND(R.request)) {
+            int n = PATH::_NAVMESH_REQUESTED_PATH_NUM_WAYPOINTS(R.request);
+            if (n > 0) {
+                R.pts.clear();
+                for (int i = 0; i < n; ++i) R.pts.push_back(PATH::_NAVMESH_REQUESTED_PATH_WAYPOINT_BY_INDEX(R.request, i));
+                R.idx = n > 1 ? 1 : 0;
+            }
+            TG_DEBUG("path %d: %d points in %d ms", R.request, n, t - R.requestAt);
+            R.request = 0;
+        } else if (t - R.requestAt > 3000) {
+            TG_DEBUG("path %d not found in 3 s (status %d): straight to the leg", R.request,
+                     PATH::_NAVMESH_REQUESTED_PATH_QUERY_STATUS(R.request));
+            R.pts = {g_leg};
+            R.idx = 0;
+            R.request = 0;
+        }
+        return;
+    }
+    if (t >= R.nextRequest) {
+        R.request = PATH::NAVMESH_REQUEST_PATH(horse, from.x, from.y, from.z, g_leg.x, g_leg.y, g_leg.z, 0);
+        R.requestAt = t;
+        R.nextRequest = t + S.repathMs;
+        if (R.pts.empty()) R.pts = {g_leg};  // head for the leg until the path comes
+    }
+}
+
+static void reinsDrive(Ped horse) {
+    Vector3 hp = pos(horse);
+    reinsPath(horse, hp);
+    while (R.idx + 1 < R.pts.size() && dist2d(hp, R.pts[R.idx]) < S.pointReach) ++R.idx;
+    Vector3 aim = R.pts.empty() ? g_leg : R.pts[R.idx];
+    R.want = headingTo(hp, aim);
+    R.cam = CAMERA::GET_GAMEPLAY_CAM_ROT(2).z;
+    // The stick steers the horse relative to the horse, not to the camera (window 17.11: a camera-relative stick pointing
+    // back left a horse that already faced the target standing for 3 s; it went once the camera swung behind it).
+    float err = wrap180(R.want - ENTITY::GET_ENTITY_HEADING(horse));  // > 0: the point is to the left
+    float lr = std::max(-1.0f, std::min(1.0f, -err / S.steerDeg));
+    float ud = std::fabs(err) > 100.0f ? -0.4f : -1.0f;  // a sharp turn: ease forward while turning
+    PAD::SET_CONTROL_VALUE_NEXT_FRAME(0, kHorseLR, lr);
+    PAD::SET_CONTROL_VALUE_NEXT_FRAME(0, kHorseUD, ud);
+    int t = now();
+    int step = g_stepNow[int(Mode::Horse)];
+    float v = ENTITY::GET_ENTITY_SPEED(horse), vt = S.gait[step];
+    // speed: a tap on the speed button only once the horse moves and faces the way (taps at a standstill piled up
+    // into a gallop at the start, 17.11), a short pull when it runs faster than the chosen gait
+    if (t < R.tapUntil) {
+        PAD::SET_CONTROL_VALUE_NEXT_FRAME(0, kHorseSprint, 1.0f);
+    } else if (step > 0 && v > 0.8f && v < vt * 0.85f && std::fabs(err) < 45.0f && t >= R.nextTap) {
+        R.tapUntil = t + 80;
+        R.nextTap = t + S.tapMs;
+    }
+    if (t < R.brakeUntil) {
+        PAD::SET_CONTROL_VALUE_NEXT_FRAME(0, kHorseStop, 1.0f);
+    } else if (v > vt * 1.3f + 0.5f && t >= R.nextBrake) {
+        R.brakeUntil = t + S.brakeMs;
+        R.nextBrake = t + 800;
+    }
+}
+
 static void issue() {
     Ped pl = player();
     int m = int(g_mode);
@@ -184,6 +293,7 @@ static void issue() {
                 case 2: TASK::TASK_MOVE_FOLLOW_ROAD_USING_NAVMESH(pl, sp, t.x, t.y, t.z, 0); break;
                 case 3: TASK::TASK_FOLLOW_NAV_MESH_TO_COORD(pl, t.x, t.y, t.z, sp, -1, S.arrive[m] * 0.5f, 0, 40000.0f); break;
                 case 4: TASK::TASK_GO_TO_COORD_ANY_MEANS(g_horse, t.x, t.y, t.z, sp, 0, false, 0, -1.0f); break;
+                case 5: reinsReset(); break;  // reinsDrive() steers every frame
                 default: TASK::TASK_GO_TO_COORD_ANY_MEANS(pl, t.x, t.y, t.z, sp, 0, false, 0, -1.0f); break;
             }
             break;
@@ -308,8 +418,10 @@ static void logLine() {
         if (p == pl || !alive(p) || PED::IS_PED_HUMAN(p) || PED::_IS_THIS_MODEL_A_HORSE(ENTITY::GET_ENTITY_MODEL(p))) continue;
         if (PED::IS_PED_GROUP_MEMBER(p, grp, false)) { dog = dist(pos(p), me); break; }
     }
-    TG_INFO("log: %s %.1f m/s, target %.0f m, leg %.0f m, at %.1f %.1f %.1f, tasks %d/%d/%d, horse task %d, dog %.0f m, %s",
+    TG_INFO("log: %s %.1f m/s, target %.0f m, leg %.0f m, at %.1f %.1f %.1f, heading %.0f want %.0f cam %.0f, pt %zu/%zu, "
+            "tasks %d/%d/%d, horse task %d, dog %.0f m, %s",
             modeName(g_mode), ENTITY::GET_ENTITY_SPEED(mover), dist2d(me, g_target), dist2d(me, g_leg), me.x, me.y, me.z,
+            ENTITY::GET_ENTITY_HEADING(mover), R.want, R.cam, R.idx, R.pts.size(),
             TASK::GET_SCRIPT_TASK_STATUS(pl, kTasks[0], true), TASK::GET_SCRIPT_TASK_STATUS(pl, kTasks[1], true),
             TASK::GET_SCRIPT_TASK_STATUS(pl, kTasks[2], true),
             g_horse ? TASK::GET_SCRIPT_TASK_STATUS(g_horse, kTasks[1], true) : -1, dog, input::describe().c_str());
@@ -344,7 +456,10 @@ void tick() {
         if (running()) end("off");
         else tryStart();
     }
-    if (!running()) return;
+    if (!running()) {
+        if (now() < g_postBrakeUntil && kHorseStop) PAD::SET_CONTROL_VALUE_NEXT_FRAME(0, kHorseStop, 1.0f);
+        return;
+    }
     int m = int(g_mode);
     if (input::speedPressed()) {
         g_stepNow[m] = (g_stepNow[m] + 1) % 3;
@@ -383,6 +498,7 @@ void tick() {
     if (S.stopOnDanger) {
         if (const char* why = danger()) return end(why);
     }
+    if (g_mode == Mode::Horse && S.method[m] == 5 && alive(g_horse)) reinsDrive(g_horse);
     if (now() < g_nextCheck) return;
     g_nextCheck = now() + 500;
     // the waypoint moved or went away
@@ -402,6 +518,7 @@ void tick() {
     Vector3 me = pos(pl);
     if (dist2d(me, g_target) <= S.arrive[m]) {
         if (!g_override && S.clearWaypoint && MAP::IS_WAYPOINT_ACTIVE()) MAP::SET_WAYPOINT_OFF();
+        if (g_mode == Mode::Horse && S.method[m] == 5) g_postBrakeUntil = now() + 700;
         return end(g_mode == Mode::Foot ? "arrived_foot" : "arrived");
     }
     // legs: the next one when this one is nearly done

@@ -14,7 +14,8 @@ void poll();                // once per frame, before the queries below
 
 bool togglePressed();       // start/stop: fired once per press (or once per hold when ToggleHoldMs > 0)
 bool speedPressed();        // next speed: fired once per press
-float moveAmount();         // 0..1, the strongest movement input this frame (left stick, WASD as the game maps them)
+float moveAmount();         // 0..1, the strongest movement input this frame: the pad's left stick, the WASD keys
+                            // (raw devices, not the game's controls: those carry our own simulated stick)
 bool padConnected();
 std::string describe();     // one line for the log: buttons mask, sticks, keys
 
