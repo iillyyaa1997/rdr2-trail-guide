@@ -1,0 +1,12 @@
+scriptRegister
+scriptUnregister
+scriptWait
+keyboardHandlerRegister
+keyboardHandlerUnregister
+nativeInit
+nativePush64
+nativeCall
+getGlobalPtr
+worldGetAllPeds
+worldGetAllObjects
+worldGetAllVehicles
