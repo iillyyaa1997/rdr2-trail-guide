@@ -29,6 +29,7 @@ struct Settings {
     int takeoverMs = 250, damage = 3, noticeMs = 3000, stuckMs = 9000, stuckTries = 4;
     int wagonFlags = 0;
     float gait[3] = {1.6f, 4.5f, 9.0f};  // reins: horse speed (m/s) held at each step
+    float wagonGait[3] = {2.0f, 4.0f, 7.0f};
     int repathMs = 3000, tapMs = 600, brakeMs = 50;
     float pointReach = 5, steerDeg = 35;
     bool steerCamera = true;  // the stick as seen from the camera (window 17.11: a forward pad stick turned the horse to
@@ -55,6 +56,11 @@ void init(const KvFile& ini) {
         if (g.size() == 3)
             for (int i = 0; i < 3; ++i) S.gait[i] = float(g[i]);
     }
+    {
+        std::vector<double> g = ini.getFloats("WagonGaits");
+        if (g.size() == 3)
+            for (int i = 0; i < 3; ++i) S.wagonGait[i] = float(g[i]);
+    }
     S.repathMs = int(ini.getInt("RepathMs", 3000));
     S.tapMs = int(ini.getInt("SpeedTapMs", 600));
     S.brakeMs = int(ini.getInt("BrakeTapMs", 50));
@@ -76,7 +82,7 @@ void init(const KvFile& ini) {
     S.arrive[int(Mode::Wagon)] = float(ini.getFloat("ArriveWagon", 15));
     S.method[int(Mode::Horse)] = int(ini.getInt("HorseMethod", 5));
     S.method[int(Mode::Foot)] = int(ini.getInt("FootMethod", 0));
-    S.method[int(Mode::Wagon)] = int(ini.getInt("WagonMethod", 0));
+    S.method[int(Mode::Wagon)] = int(ini.getInt("WagonMethod", 5));
     S.legLength = float(ini.getFloat("LegLength", 150));
     S.roadSnap = ini.getBool("RoadSnap", false);
     S.stopOnDanger = ini.getBool("StopOnDanger", true);
@@ -216,7 +222,7 @@ struct Reins {
     int request = 0, requestAt = 0, nextRequest = 0, fails = 0;
     std::vector<Vector3> pts;
     size_t idx = 0;
-    int tapUntil = 0, nextTap = 0, brakeUntil = 0, nextBrake = 0;
+    int tapUntil = 0, nextTap = 0, brakeUntil = 0, nextBrake = 0, backUntil = 0;
     float want = 0, cam = 0;
 };
 static Reins R;
@@ -241,7 +247,7 @@ static void reinsReset() {
     }
 }
 
-static void reinsPath(Ped horse, const Vector3& from) {
+static void reinsPath(Entity horse, const Vector3& from) {
     int t = now();
     if (R.request) {
         if (PATH::_NAVMESH_REQUESTED_PATH_WAYPOINTS_FOUND(R.request)) {
@@ -283,7 +289,7 @@ static void reinsPath(Ped horse, const Vector3& from) {
     }
 }
 
-static void reinsDrive(Ped horse) {
+static void reinsDrive(Entity horse, Mode mode) {
     Vector3 hp = pos(horse);
     reinsPath(horse, hp);
     while (R.idx + 1 < R.pts.size() && dist2d(hp, R.pts[R.idx]) < S.pointReach) ++R.idx;
@@ -303,13 +309,17 @@ static void reinsDrive(Ped horse) {
     PAD::SET_CONTROL_VALUE_NEXT_FRAME(0, kHorseLR, lr);
     PAD::SET_CONTROL_VALUE_NEXT_FRAME(0, kHorseUD, ud);
     int t = now();
-    int step = g_stepNow[int(Mode::Horse)];
-    float v = ENTITY::GET_ENTITY_SPEED(horse), vt = S.gait[step];
+    if (t < R.backUntil) {  // stuck: back away a little before the detour
+        lr = 0;
+        ud = 1.0f;
+    }
+    int step = g_stepNow[int(mode)];
+    float v = ENTITY::GET_ENTITY_SPEED(horse), vt = mode == Mode::Wagon ? S.wagonGait[step] : S.gait[step];
     // speed: a tap on the speed button only once the horse moves and faces the way (taps at a standstill piled up
     // into a gallop at the start, 17.11), a short pull when it runs faster than the chosen gait
     if (t < R.tapUntil) {
         PAD::SET_CONTROL_VALUE_NEXT_FRAME(0, kHorseSprint, 1.0f);
-    } else if (step > 0 && v > 0.8f && v < vt * 0.85f && std::fabs(err) < 45.0f && t >= R.nextTap) {
+    } else if (step > 0 && t >= R.backUntil && v > 0.8f && v < vt * 0.85f && std::fabs(err) < 45.0f && t >= R.nextTap) {
         R.tapUntil = t + 80;
         R.nextTap = t + S.tapMs;
     }
@@ -344,7 +354,8 @@ static void issue() {
             else TASK::TASK_FOLLOW_NAV_MESH_TO_COORD(pl, t.x, t.y, t.z, sp, -1, S.arrive[m] * 0.5f, 0, 40000.0f);
             break;
         case Mode::Wagon:
-            if (S.method[m] == 1) TASK::TASK_GO_TO_COORD_ANY_MEANS(pl, t.x, t.y, t.z, sp, 0, false, 0, -1.0f);
+            if (S.method[m] == 5) reinsReset();
+            else if (S.method[m] == 1) TASK::TASK_GO_TO_COORD_ANY_MEANS(pl, t.x, t.y, t.z, sp, 0, false, 0, -1.0f);
             else TASK::TASK_VEHICLE_DRIVE_TO_DESTINATION(pl, g_wagon, t.x, t.y, t.z, sp, S.wagonFlags, 0, S.arrive[m] * 0.5f, S.arrive[m], false);
             break;
         default: break;
@@ -547,7 +558,8 @@ void tick() {
     if (S.stopOnDanger) {
         if (const char* why = danger()) return end(why);
     }
-    if (g_mode == Mode::Horse && S.method[m] == 5 && alive(g_horse)) reinsDrive(g_horse);
+    if (g_mode == Mode::Horse && S.method[m] == 5 && alive(g_horse)) reinsDrive(g_horse, Mode::Horse);
+    if (g_mode == Mode::Wagon && S.method[m] == 5 && exists(g_wagon)) reinsDrive(g_wagon, Mode::Wagon);
     if (now() < g_nextCheck) return;
     g_nextCheck = now() + 500;
     // the waypoint moved or went away
@@ -593,16 +605,20 @@ void tick() {
         if (++g_tries > S.stuckTries) return end("stuck");
         TG_INFO("no progress for %d ms (%.0f m left), try %d", S.stuckMs, legLeft, g_tries);
         g_bestAt = now();
-        if (g_mode == Mode::Horse && S.method[m] == 5) {
-            // a detour: 50 m off to one side, then the other, then on to the next leg from there
-            float side = (g_tries % 2) ? 70.0f : -70.0f;
-            float a = (headingTo(me, g_leg) + side) * 0.0174533f;
-            g_leg = withGround(Vector3(me.x - std::sin(a) * 50.0f, me.y + std::cos(a) * 50.0f, me.z), me.z);
+        if (S.method[m] == 5 && g_mode != Mode::Foot) {
+            // back away 1.5 s, then a detour 40 m off: 90° right, 90° left, 150° right, 150° left
+            static const float kSides[4] = {-90.0f, 90.0f, -150.0f, 150.0f};
+            float side = kSides[(g_tries - 1) % 4];
+            float a = (headingTo(me, g_target) + side) * 0.0174533f;
+            g_leg = withGround(Vector3(me.x - std::sin(a) * 40.0f, me.y + std::cos(a) * 40.0f, me.z), me.z);
+            reinsReset();
+            R.backUntil = now() + 1500;
             g_best = dist2d(me, g_leg);
             g_detourUntil = now() + 20000;
-            TG_INFO("detour to %.1f %.1f", g_leg.x, g_leg.y);
+            TG_INFO("detour to %.1f %.1f (%.0f deg)", g_leg.x, g_leg.y, side);
+        } else {
+            issue();
         }
-        issue();
     }
 }
 
