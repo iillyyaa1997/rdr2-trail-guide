@@ -27,6 +27,7 @@ struct Fake {
 };
 static std::vector<Fake> g_fakes;  // control values pushed every frame (input simulation tests)
 static int g_path = 0, g_pathAt = 0;
+static int g_xstickUntil = 0;
 static std::vector<Vehicle> g_vehicles;
 static int g_ctlUntil = 0, g_ctlNext = 0;
 
@@ -131,6 +132,16 @@ static void run(const std::vector<std::string>& a) {
         CLOCK::SET_CLOCK_TIME(int(num(1, 12)), 0, 0);
     } else if (cmd == "heal") {
         ENTITY::SET_ENTITY_HEALTH(pl, ENTITY::GET_ENTITY_MAX_HEALTH(pl, false), 0);
+    } else if (cmd == "steer") {
+        autopilot::setSteerCamera(a.size() < 2 || a[1] != "horse");
+        TG_INFO("test: steer %s", a.size() < 2 || a[1] != "horse" ? "camera" : "horse");
+    } else if (cmd == "xhook") {
+        TG_INFO("test: pad hook %s", input::padHookInfo().c_str());
+    } else if (cmd == "xstick" && a.size() >= 3) {
+        // xstick <lx> <ly> [seconds]: the pad override alone (no autopilot)
+        input::padOverride(float(num(1, 0)), float(num(2, 1)), 0);
+        g_xstickUntil = now() + int(num(3, 3) * 1000);
+        TG_INFO("test: pad stick %.2f %.2f", num(1, 0), num(2, 1));
     } else if (cmd == "control") {
         // control <0|1> [flags]: SET_PLAYER_CONTROL (does a task on the mounted player drive the horse then?)
         PLAYER::SET_PLAYER_CONTROL(PLAYER::PLAYER_ID(), num(1, 1) != 0, int(num(2, 256)), false);
@@ -160,6 +171,10 @@ static void run(const std::vector<std::string>& a) {
 }
 
 void tick() {
+    if (g_xstickUntil && now() > g_xstickUntil) {
+        g_xstickUntil = 0;
+        input::padRelease();
+    }
     for (size_t i = 0; i < g_fakes.size();) {
         if (now() > g_fakes[i].until) { g_fakes.erase(g_fakes.begin() + i); continue; }
         PAD::SET_CONTROL_VALUE_NEXT_FRAME(0, g_fakes[i].control, g_fakes[i].value);

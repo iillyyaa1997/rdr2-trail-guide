@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 
 #include "core/log.h"
 #include "core/strutil.h"
@@ -24,7 +25,85 @@ struct XState {
 using XInputGetStateFn = DWORD(WINAPI*)(DWORD, XState*);
 
 static HMODULE g_xinput = nullptr;
-static XInputGetStateFn g_getState = nullptr;
+static XInputGetStateFn g_getState = nullptr;  // the real pad (xinput1_4 / 1_3 / 9_1_0 loaded by us, never patched)
+
+// ---------------------------------------------------------------- pad override (see input.h)
+static volatile LONG g_ovActive = 0;
+static volatile LONG g_ovSeq = 0;
+static volatile SHORT g_ovLX = 0, g_ovLY = 0;
+static volatile WORD g_ovButtons = 0;
+static std::string g_hookInfo = "not installed";
+
+static DWORD WINAPI hookedGetState(DWORD index, XState* s) {
+    if (!g_getState) return ERROR_DEVICE_NOT_CONNECTED;
+    DWORD r = g_getState(index, s);
+    if (r == 0 && g_ovActive && s) {
+        s->pad.thumbLX = g_ovLX;
+        s->pad.thumbLY = g_ovLY;
+        s->pad.buttons |= g_ovButtons;
+        s->packet += 0x40000000u + DWORD(g_ovSeq);  // a new packet whenever our values change: the game re-reads it
+    }
+    return r;
+}
+
+static bool patchExport(HMODULE m, const char* dll) {
+    BYTE* f = (BYTE*)GetProcAddress(m, "XInputGetState");
+    if (!f) return false;
+    char bytes[64];
+    std::snprintf(bytes, sizeof bytes, "%02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X", f[0], f[1], f[2], f[3],
+                  f[4], f[5], f[6], f[7], f[8], f[9], f[10], f[11]);
+    // 12 bytes: mov rax, imm64 ; jmp rax
+    BYTE code[12] = {0x48, 0xB8, 0, 0, 0, 0, 0, 0, 0, 0, 0xFF, 0xE0};
+    void* target = (void*)&hookedGetState;
+    std::memcpy(code + 2, &target, 8);
+    DWORD old = 0;
+    if (!VirtualProtect(f, sizeof code, PAGE_EXECUTE_READWRITE, &old)) {
+        TG_WARN("pad hook: %s VirtualProtect failed (%lu)", dll, GetLastError());
+        return false;
+    }
+    std::memcpy(f, code, sizeof code);
+    VirtualProtect(f, sizeof code, old, &old);
+    FlushInstructionCache(GetCurrentProcess(), f, sizeof code);
+    TG_INFO("pad hook: %s XInputGetState patched (was %s)", dll, bytes);
+    return true;
+}
+
+bool padHookInstall() {
+    if (!g_getState) {
+        g_hookInfo = "no real XInput to read the pad";
+        return false;
+    }
+    int n = 0;
+    std::string which;
+    // the game's XInput DLLs; xinput1_4 is ours (raw reads) unless the game loaded only that one
+    for (const wchar_t* dll : {L"xinput9_1_0.dll", L"xinput1_3.dll", L"xinput1_2.dll", L"xinput1_1.dll"}) {
+        HMODULE m = GetModuleHandleW(dll);
+        if (!m || m == g_xinput) continue;
+        char name[32];
+        std::snprintf(name, sizeof name, "%ls", dll);
+        if (patchExport(m, name)) { ++n; which += std::string(which.empty() ? "" : ", ") + name; }
+    }
+    g_hookInfo = n ? "patched " + which : "no game XInput DLL found";
+    if (!n) TG_WARN("pad hook: %s", g_hookInfo.c_str());
+    return n > 0;
+}
+
+void padOverride(float lx, float ly, unsigned short buttons) {
+    auto toShort = [](float v) { v = v < -1 ? -1 : (v > 1 ? 1 : v); return SHORT(v * 32767.0f); };
+    SHORT nx = toShort(lx), ny = toShort(ly);
+    if (!g_ovActive || nx != g_ovLX || ny != g_ovLY || buttons != g_ovButtons) InterlockedIncrement(&g_ovSeq);
+    g_ovLX = nx;
+    g_ovLY = ny;
+    g_ovButtons = buttons;
+    InterlockedExchange(&g_ovActive, 1);
+}
+
+void padRelease() {
+    if (g_ovActive) InterlockedIncrement(&g_ovSeq);
+    InterlockedExchange(&g_ovActive, 0);
+}
+
+std::string padHookInfo() { return g_hookInfo; }
 
 struct Button {
     WORD mask = 0;

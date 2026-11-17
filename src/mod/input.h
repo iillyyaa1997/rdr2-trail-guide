@@ -19,6 +19,16 @@ float moveAmount();         // 0..1, the strongest movement input this frame: th
 bool padConnected();
 std::string describe();     // one line for the log: buttons mask, sticks, keys
 
+// The game reads the gamepad through XInput (XINPUT9_1_0.dll in RDR2). While the gamepad is the game's active device the
+// game ignores SET_CONTROL_VALUE_NEXT_FRAME on the sticks (window 17.11: the simulated stick moved the horse only after
+// keyboard input), so the reins also steer through the pad itself: XInputGetState of the game's XInput DLLs is
+// redirected to ours, which reads the real pad (xinput1_4) and, while an override is set, replaces the left stick and
+// adds buttons. Our own reads (takeover, toggles) stay raw.
+bool padHookInstall();               // false if no game XInput DLL was found or patching failed (logged)
+void padOverride(float lx, float ly, unsigned short buttons);  // stick -1..1 (ly +1 = forward), XInput button bits
+void padRelease();                   // the real pad again
+std::string padHookInfo();
+
 // test builds: pretend the buttons were pressed
 void fakeToggle();
 void fakeSpeed();

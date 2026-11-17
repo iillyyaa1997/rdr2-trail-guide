@@ -23,5 +23,6 @@ void stopNow();
 void setMethod(Mode m, int method);
 void setStep(int step);
 void logFor(int seconds);  // speed / distance / task status every 500 ms
+void setSteerCamera(bool camera);
 
 }  // namespace tg::autopilot
