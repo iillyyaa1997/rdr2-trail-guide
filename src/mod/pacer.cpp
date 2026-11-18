@@ -60,16 +60,20 @@ static void drive(float speed) {  // a new speed without restarting the task (re
     TASK::SET_DRIVE_TASK_CRUISE_SPEED(g_driver, speed);
 }
 
-bool start(const Vector3& from, const Vector3& target) {
+static int g_respawns = 0;
+static bool g_everMoved = false;
+static Vector3 g_spawnPos;
+
+static bool spawnAt(const Vector3& from, const Vector3& target, float aheadM) {
     stop();
     // the cart starts on the road 30-40 m toward the waypoint, not on top of Arthur (it popped up 1 m from him)
     Vector3 node;
     float heading = 0;
     float dx = target.x - from.x, dy = target.y - from.y, dl = std::max(1.0f, std::hypot(dx, dy));
-    Vector3 ahead(from.x + dx / dl * 35.0f, from.y + dy / dl * 35.0f, from.z);
+    Vector3 ahead(from.x + dx / dl * aheadM, from.y + dy / dl * aheadM, from.z);
     if (!PATH::GET_CLOSEST_VEHICLE_NODE_WITH_HEADING(ahead.x, ahead.y, ahead.z, &node, &heading, 1, 3.0f, 0.0f) ||
-        dist2d(node, from) > 80.0f) {
-        TG_INFO("pacer: no road within 80 m");
+        dist2d(node, from) > aheadM + 45.0f) {
+        TG_INFO("pacer: no road within %.0f m", aheadM + 45.0f);
         return false;
     }
     float toTarget = std::atan2(-(target.x - node.x), target.y - node.y) * 57.29578f;  // the game's heading: 0 = north, ccw
@@ -101,15 +105,22 @@ bool start(const Vector3& from, const Vector3& target) {
     g_startedAt = now();
     g_nextLog = 0;
     g_retasks = 0;
+    g_everMoved = false;
+    g_spawnPos = node;
     g_crumbs.clear();
     g_crumbs.push_back(node);
     g_lastMovePos = node;
     g_movedAt = now();
     g_nextSpeed = now() + 3000;
     task(8.0f);
-    TG_INFO("pacer: cart on the road at %.1f %.1f (%.0f m from Arthur), team %d", node.x, node.y, dist2d(node, from),
-            int((g_team[0] != 0) + (g_team[1] != 0)));
+    TG_INFO("pacer: cart on the road at %.1f %.1f (%.0f m from Arthur, heading %.0f), team %d", node.x, node.y,
+            dist2d(node, from), heading, int((g_team[0] != 0) + (g_team[1] != 0)));
     return true;
+}
+
+bool start(const Vector3& from, const Vector3& target) {
+    g_respawns = 0;
+    return spawnAt(from, target, 35.0f);
 }
 
 void stop() {
@@ -152,6 +163,15 @@ void tick(const Vector3& me, float mySpeed) {
         TG_INFO("pacer: cart at %.1f %.1f, %.1f m/s (set %.1f), %.0f m ahead of Arthur, %d track points, team %d, task %d",
                 c.x, c.y, ENTITY::GET_ENTITY_SPEED(g_cart), g_speedSet, dist2d(c, me), int(g_crumbs.size()), g_teamCount,
                 TASK::GET_SCRIPT_TASK_STATUS(g_driver, MISC::GET_HASH_KEY("SCRIPT_TASK_VEHICLE_DRIVE_TO_DESTINATION"), true));
+    }
+    if (!g_everMoved && dist2d(c, g_spawnPos) > 3.0f) g_everMoved = true;
+    // never moved off its spot (18.11 in Strawberry: stood in town for good): a new cart further along, twice
+    if (!g_everMoved && t - g_startedAt > 7000 && g_respawns < 2) {
+        ++g_respawns;
+        Vector3 target = g_target;
+        TG_INFO("pacer: the cart never moved, a new one further along (%d)", g_respawns);
+        if (!spawnAt(me, target, 35.0f + 45.0f * g_respawns)) g_respawns = 2;
+        return;
     }
     if (t - g_movedAt > 8000 && g_retasks < 2) {  // standing: give the task again once or twice before giving up
         ++g_retasks;
