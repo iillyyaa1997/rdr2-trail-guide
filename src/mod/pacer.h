@@ -10,6 +10,8 @@ void stop();
 bool active();
 void tick(const Vector3& me, float mySpeed);             // speed matching, breadcrumbs, hiding
 bool nextPoint(const Vector3& me, Vector3& out);          // the track point to head for
-bool stuck();                                             // the cart has not moved for a while: fall back to legs
+bool stuck();
+
+extern int g_flags;  // the cart's driving style                                             // the cart has not moved for a while: fall back to legs
 
 }  // namespace tg::pacer

@@ -9,6 +9,7 @@
 #include "core/log.h"
 #include "core/strutil.h"
 #include "mod/autopilot.h"
+#include "mod/pacer.h"
 #include "mod/game.h"
 #include "mod/input.h"
 #include "sdk/natives.gen.h"
@@ -47,6 +48,9 @@ static void run(const std::vector<std::string>& a) {
         autopilot::startTo(add(p, scale(d, m)));
     } else if (cmd == "stop") {
         autopilot::stopNow();
+    } else if (cmd == "pflags" && a.size() >= 2) {
+        pacer::g_flags = std::atoi(a[1].c_str());
+        TG_INFO("test: pacer driving style %d", pacer::g_flags);
     } else if (cmd == "method" && a.size() >= 3) {
         autopilot::Mode m = a[1] == "foot" ? autopilot::Mode::Foot : a[1] == "wagon" ? autopilot::Mode::Wagon : autopilot::Mode::Horse;
         autopilot::setMethod(m, int(num(2, 0)));
