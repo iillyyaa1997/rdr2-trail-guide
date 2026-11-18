@@ -36,6 +36,8 @@ struct Settings {
                               // the camera's view and walked it there); 'horse' = relative to the horse's nose
     bool padSteer = true;      // also steer through the gamepad (XInput override), not only the game's control values
     bool carefulGallop = true; // a trot on bends and among obstacles even at the gallop step
+    bool roads = true;         // legs along the road network when a road near Arthur heads to the target
+    float roadReach = 40;      // a road this close counts as near
 };
 static Settings S;
 static int g_stepNow[4] = {0, 1, 1, 1};  // current speed per mode (a change stays until the game restarts)
@@ -69,6 +71,8 @@ void init(const KvFile& ini) {
     S.steerCamera = ini.get("SteerRelativeTo", "camera") != "horse";
     S.padSteer = ini.getBool("PadSteering", true);
     S.carefulGallop = ini.getBool("CarefulGallop", true);
+    S.roads = ini.getBool("FollowRoads", true);
+    S.roadReach = float(ini.getFloat("RoadReach", 40));
     if (S.padSteer) input::padHookInstall();
     TG_INFO("reins: gaits %.1f/%.1f/%.1f m/s, steer %s, pad steering %s", S.gait[0], S.gait[1], S.gait[2],
             S.steerCamera ? "camera" : "horse", S.padSteer ? input::padHookInfo().c_str() : "off");
@@ -198,10 +202,42 @@ static bool inWater(const Vector3& p) {
     return WATER::GET_WATER_HEIGHT_NO_WAVES(p.x, p.y, p.z, &w) && w > p.z + 0.3f;
 }
 
+// Along the roads: from the road node nearest Arthur, step from node to node, each time the node that heads toward the
+// target (the game's road graph for wagons; the GPS line itself cannot be read). Stops when the road turns away from
+// the target; false when there is no road near or it does not lead our way for at least 40 m.
+static bool roadLeg(const Vector3& from, float len, Vector3& out) {
+    Vector3 cur;
+    if (!PATH::GET_CLOSEST_VEHICLE_NODE(from.x, from.y, from.z, &cur, 1, 3.0f, 0.0f) || dist2d(cur, from) > S.roadReach)
+        return false;
+    float walked = 0;
+    for (int k = 0; k < 24 && walked < len; ++k) {
+        float d = dist2d(cur, g_target);
+        if (d < 1.0f) break;
+        Vector3 probe(cur.x + (g_target.x - cur.x) / d * 15.0f, cur.y + (g_target.y - cur.y) / d * 15.0f, cur.z);
+        Vector3 n;
+        float h = 0;
+        if (!PATH::GET_NTH_CLOSEST_VEHICLE_NODE_FAVOUR_DIRECTION(probe.x, probe.y, probe.z, g_target.x, g_target.y, g_target.z, 1,
+                                                                 &n, &h, 1, 0, 0))
+            break;
+        float step = dist2d(n, cur);
+        if (step < 3.0f || dist2d(n, g_target) > d + 2.0f) break;  // no progress along the road toward the target
+        walked += step;
+        cur = n;
+    }
+    if (walked < 40.0f) return false;
+    out = cur;
+    return true;
+}
+
 static Vector3 nextLeg(const Vector3& from) {
     float d = dist2d(from, g_target);
     float len = S.legLength * g_legScale;
     if (S.legLength <= 0 || d <= len * 1.3f) return withGround(g_target, from.z);
+    Vector3 road;
+    if (S.roads && roadLeg(from, len, road)) {
+        TG_DEBUG("road leg %.1f %.1f (%.0f m from Arthur)", road.x, road.y, dist2d(road, from));
+        return road;
+    }
     float k = len / d;
     Vector3 p(from.x + (g_target.x - from.x) * k, from.y + (g_target.y - from.y) * k, from.z);
     if (S.roadSnap) {
