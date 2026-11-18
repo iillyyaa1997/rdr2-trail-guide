@@ -36,6 +36,8 @@ struct Settings {
                               // the camera's view and walked it there); 'horse' = relative to the horse's nose
     bool padSteer = true;      // also steer through the gamepad (XInput override), not only the game's control values
     bool carefulGallop = true; // a trot on bends and among obstacles even at the gallop step
+    bool lookAhead = true;     // a ray ahead slows the horse (or the team) before something solid
+    bool noBucking = true;     // the horse may not buck Arthur off while the autopilot rides
     bool roads = true;         // legs along the road network when a road near Arthur heads to the target
     float roadReach = 40;      // a road this close counts as near
 };
@@ -71,6 +73,8 @@ void init(const KvFile& ini) {
     S.steerCamera = ini.get("SteerRelativeTo", "camera") != "horse";
     S.padSteer = ini.getBool("PadSteering", true);
     S.carefulGallop = ini.getBool("CarefulGallop", true);
+    S.lookAhead = ini.getBool("LookAhead", true);
+    S.noBucking = ini.getBool("NoBucking", true);
     S.roads = ini.getBool("FollowRoads", true);
     S.roadReach = float(ini.getFloat("RoadReach", 40));
     if (S.padSteer) input::padHookInstall();
@@ -261,7 +265,10 @@ struct Reins {
     int request = 0, requestAt = 0, nextRequest = 0, fails = 0;
     std::vector<Vector3> pts;
     size_t idx = 0;
-    int tapUntil = 0, nextTap = 0, brakeUntil = 0, nextBrake = 0, backUntil = 0;
+    int tapUntil = 0, nextTap = 0, brakeUntil = 0, nextBrake = 0, backUntil = 0, coastUntil = 0;
+    float prevV = 0;
+    int prevVAt = 0;
+    int nextProbe = 0, blockedUntil = 0;
     float want = 0, cam = 0;
 };
 static Reins R;
@@ -357,6 +364,29 @@ static void reinsDrive(Entity horse, Mode mode) {
         ud = 1.0f;
     }
     int step = g_stepNow[int(mode)];
+    // look ahead: a ray in front of the horse (or the team) as far as ~1.2 s of travel; something solid there (a tree,
+    // a fence, a rock, a wagon, a man) and the gallop drops to a trot early (18.11: Arthur thrown at 8-9 m/s on a
+    // straight with no warning)
+    float vNow = ENTITY::GET_ENTITY_SPEED(horse);
+    if (S.lookAhead && vNow > 3.0f && t >= R.nextProbe) {
+        R.nextProbe = t + 100;
+        float hr = ENTITY::GET_ENTITY_HEADING(horse) * 0.0174533f;
+        float fx = -std::sin(hr), fy = std::cos(hr);
+        float start = mode == Mode::Wagon ? 3.5f : 1.8f, len = 3.0f + vNow * 1.2f;
+        Vector3 a(hp.x + fx * start, hp.y + fy * start, hp.z + 0.3f);
+        Vector3 b(hp.x + fx * (start + len), hp.y + fy * (start + len), hp.z + 0.3f);
+        int sh = SHAPETEST::START_EXPENSIVE_SYNCHRONOUS_SHAPE_TEST_LOS_PROBE(a.x, a.y, a.z, b.x, b.y, b.z, 1 | 2 | 4 | 16, horse, 7);
+        BOOL hit = false;
+        Vector3 end, normal;
+        Entity what = 0;
+        SHAPETEST::GET_SHAPE_TEST_RESULT(sh, &hit, &end, &normal, &what);
+        if (hit) {
+            if (t >= R.blockedUntil) TG_DEBUG("look-ahead: something %.0f m ahead at %.1f m/s (entity %d)", dist(hp, end), vNow, what);
+            R.blockedUntil = t + 1500;
+        }
+    }
+    bool blockedAhead = t < R.blockedUntil;
+    if (blockedAhead && step > (mode == Mode::Wagon ? 0 : 1)) step = mode == Mode::Wagon ? 0 : 1;
     // careful gallop: on a bend or where the path points come thick (woods, rocks) the horse goes at a trot — a gallop
     // there threw Arthur against a tree (18.11, the path is cut for a man, narrower than a horse)
     if (step == 2 && S.carefulGallop) {
@@ -371,17 +401,33 @@ static void reinsDrive(Entity horse, Mode mode) {
     float v = ENTITY::GET_ENTITY_SPEED(horse), vt = mode == Mode::Wagon ? S.wagonGait[step] : S.gait[step];
     // speed: a tap on the speed button only once the horse moves and faces the way (taps at a standstill piled up
     // into a gallop at the start, 17.11), a short pull when it runs faster than the chosen gait
+    // speed trend over ~0.4 s: a tap only once the last one has stopped adding speed (taps at a slow start piled up:
+    // a wagon at «medium» reached 7.3 m/s and threw Arthur, 18.11)
+    if (t - R.prevVAt >= 400) {
+        R.prevV = v;
+        R.prevVAt = t;
+    }
+    bool rising = v > R.prevV + 0.15f;
+    int tapGap = mode == Mode::Wagon ? S.tapMs * 3 : S.tapMs + 300;
     if (t < R.tapUntil) {
         PAD::SET_CONTROL_VALUE_NEXT_FRAME(0, kHorseSprint, 1.0f);
-    } else if (step > 0 && t >= R.backUntil && v > 0.8f && v < vt * 0.85f && std::fabs(err) < 45.0f && t >= R.nextTap) {
+    } else if (step > 0 && t >= R.backUntil && v > 0.8f && v < vt * 0.85f && !rising && std::fabs(err) < 45.0f &&
+               t >= R.nextTap) {
         R.tapUntil = t + 80;
-        R.nextTap = t + S.tapMs;
+        R.nextTap = t + tapGap;
     }
+    // too fast: the stop control for the keyboard, and for the pad (no brake button known) the stick let go for a
+    // moment — the horse or the team eases off by itself
     if (t < R.brakeUntil) {
         PAD::SET_CONTROL_VALUE_NEXT_FRAME(0, kHorseStop, 1.0f);
-    } else if (v > vt * 1.3f + 0.5f && t >= R.nextBrake) {
+    } else if (v > vt * 1.25f + 0.5f && t >= R.nextBrake) {
         R.brakeUntil = t + S.brakeMs;
+        R.coastUntil = t + (mode == Mode::Wagon ? 400 : 250);
         R.nextBrake = t + 800;
+    }
+    if (t < R.coastUntil) {
+        ud = 0;
+        lr *= 0.5f;
     }
     // the same through the gamepad: left stick (XInput Y up = forward), A = the horse's speed button
     if (S.padSteer) input::padOverride(lr, -ud, t < R.tapUntil ? 0x1000 : 0);
@@ -612,6 +658,13 @@ void tick() {
     }
     if (S.stopOnDanger) {
         if (const char* why = danger()) return end(why);
+    }
+    // a scared horse stopped dead, spun round and bucked Arthur off twice near Saint Denis (18.11): no bucking while
+    // the autopilot rides (re-armed every 2 s, it lapses ~10 s after a stop)
+    static int nextBuckGuard = 0;
+    if (g_mode == Mode::Horse && S.noBucking && alive(g_horse) && now() >= nextBuckGuard) {
+        nextBuckGuard = now() + 2000;
+        PLAYER::SET_MIN_TIME_BEFORE_HORSE_BUCKING(g_horse, 10000);
     }
     if (g_mode == Mode::Horse && S.method[m] == 5 && alive(g_horse)) reinsDrive(g_horse, Mode::Horse);
     if (g_mode == Mode::Wagon && S.method[m] == 5 && exists(g_wagon)) reinsDrive(g_wagon, Mode::Wagon);

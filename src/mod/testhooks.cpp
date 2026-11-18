@@ -87,6 +87,8 @@ static void run(const std::vector<std::string>& a) {
         Ped horse = PLAYER::_GET_SADDLE_HORSE_FOR_PLAYER(PLAYER::PLAYER_ID());
         if (alive(horse)) {
             if (dist(pos(horse), p) > 6) ENTITY::SET_ENTITY_COORDS(horse, p.x + 3, p.y, p.z, false, false, false, true);
+            // the horse did not come (far, not streamed): mounting would carry Arthur to it, away from the start
+            if (dist(pos(horse), p) > 15) { TG_INFO("test: mount: the horse is %.0f m away, not mounting", dist(pos(horse), p)); return; }
             PED::SET_PED_ONTO_MOUNT(pl, horse, -1, true);
         }
         TG_INFO("test: mount horse %d -> mounted %d", horse, int(PED::IS_PED_ON_MOUNT(pl)));
