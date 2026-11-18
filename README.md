@@ -8,7 +8,7 @@ moment you move the stick yourself.
 
 | | Gamepad | Keyboard |
 |---|---|---|
-| Start / stop | D-pad left | K |
+| Start / stop | L3 (press the left stick) | K |
 | Next speed (while it runs) | D-pad right | L |
 | Take over | move the left stick | W / A / S / D |
 
