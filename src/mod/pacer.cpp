@@ -71,9 +71,11 @@ static bool spawnAt(const Vector3& from, const Vector3& target, float aheadM) {
     float heading = 0;
     float dx = target.x - from.x, dy = target.y - from.y, dl = std::max(1.0f, std::hypot(dx, dy));
     Vector3 ahead(from.x + dx / dl * aheadM, from.y + dy / dl * aheadM, from.z);
-    if (!PATH::GET_CLOSEST_VEHICLE_NODE_WITH_HEADING(ahead.x, ahead.y, ahead.z, &node, &heading, 1, 3.0f, 0.0f) ||
+    // a main road only (node type 0): on a switched-off track the game's driver never sets off (18.11: Strawberry and a
+    // trail south-west of Valentine, the cart stood for good)
+    if (!PATH::GET_CLOSEST_VEHICLE_NODE_WITH_HEADING(ahead.x, ahead.y, ahead.z, &node, &heading, 0, 3.0f, 0.0f) ||
         dist2d(node, from) > aheadM + 45.0f) {
-        TG_INFO("pacer: no road within %.0f m", aheadM + 45.0f);
+        TG_DEBUG("pacer: no main road within %.0f m", aheadM + 45.0f);
         return false;
     }
     float toTarget = std::atan2(-(target.x - node.x), target.y - node.y) * 57.29578f;  // the game's heading: 0 = north, ccw

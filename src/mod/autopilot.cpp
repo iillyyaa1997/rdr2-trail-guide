@@ -279,6 +279,7 @@ struct Reins {
 };
 static Reins R;
 static int g_postBrakeUntil = 0;  // a short pull on the reins after arriving
+static int g_nextPacerTry = 0;    // no main road near at the start: look again every 10 s while riding
 
 static float headingTo(const Vector3& from, const Vector3& to) {
     return std::atan2(-(to.x - from.x), to.y - from.y) * 57.2957795f;  // the game's heading: 0 north, 90 west
@@ -505,6 +506,7 @@ static void begin(Mode m, const Vector3& target) {
         Vector3 pt;
         if (pacer::nextPoint(pos(pl), pt)) g_leg = pt;
     }
+    g_nextPacerTry = now() + 10000;
     issue();
     if (S.cinematic) {
         CAMERA::SET_CINEMATIC_MODE_ACTIVE(true);
@@ -703,6 +705,17 @@ void tick() {
         nextBuckGuard = now() + 2000;
         PLAYER::SET_MIN_TIME_BEFORE_HORSE_BUCKING(g_horse, 10000);
     }
+    if (!pacer::active() && (g_mode == Mode::Horse || g_mode == Mode::Wagon) && S.pacer && S.roads &&
+        now() >= g_nextPacerTry && dist2d(pos(pl), g_target) > 300.0f) {
+        g_nextPacerTry = now() + 10000;
+        if (pacer::start(pos(pl), g_target)) {
+            Vector3 pt;
+            if (pacer::nextPoint(pos(pl), pt)) {
+                g_leg = pt;
+                reinsReset();
+            }
+        }
+    }
     if (pacer::active()) {
         Vector3 me0 = pos(pl);
         Entity mover = g_mode == Mode::Horse && g_horse ? g_horse : (g_mode == Mode::Wagon && g_wagon ? g_wagon : pl);
@@ -712,6 +725,7 @@ void tick() {
         if (nearEnd || pacer::stuck()) {
             TG_INFO("pacer: off (%s), legs from here", nearEnd ? "near the waypoint" : "the cart is stuck");
             pacer::stop();
+            g_nextPacerTry = now() + 60000;
             g_leg = nextLeg(me0);
             g_legStart = dist2d(me0, g_leg);
             reinsReset();
