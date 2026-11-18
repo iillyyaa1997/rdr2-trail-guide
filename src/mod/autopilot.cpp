@@ -194,8 +194,9 @@ static Vector3 withGround(Vector3 p, float fallbackZ) {
 
 // The next point to head for: the target itself, or (LegLength > 0) a point LegLength along the way, moved onto the
 // nearest road the game's GPS knows when that road is close to the line.
-static float g_legScale = 1.0f;
-static int g_detourUntil = 0;  // shrinks after paths that are not found (a leg end across a river, 17.11)
+static float g_legScale = 1.0f;  // shrinks after paths that are not found (a leg end across a river, 17.11)
+static int g_detourUntil = 0;
+static float g_legStart = 0;     // the leg's length when it was set
 
 static bool inWater(const Vector3& p) {
     float w = 0;
@@ -309,6 +310,7 @@ static void reinsPath(Entity horse, const Vector3& from) {
                 g_legScale *= 0.5f;
                 R.fails = 0;
                 g_leg = nextLeg(from);
+                g_legStart = dist2d(from, g_leg);
                 TG_DEBUG("leg shortened to %.0f m: %.1f %.1f", S.legLength * g_legScale, g_leg.x, g_leg.y);
             }
         }
@@ -422,6 +424,7 @@ static void begin(Mode m, const Vector3& target) {
     g_target = target;
     g_legScale = 1.0f;
     g_leg = nextLeg(pos(pl));
+    g_legStart = dist2d(pos(pl), g_leg);
     g_health = ENTITY::GET_ENTITY_HEALTH(pl);
     g_horseHealth = g_horse ? ENTITY::GET_ENTITY_HEALTH(g_horse) : 0;
     g_healthAt = now();
@@ -621,6 +624,7 @@ void tick() {
             g_target = withGround(w, pos(pl).z);
             g_leg = nextLeg(pos(pl));
             g_best = dist2d(pos(pl), g_leg);
+            g_legStart = g_best;
             g_bestAt = now();
             g_tries = 0;
             issue();
@@ -636,10 +640,12 @@ void tick() {
     // legs: the next one when this one is nearly done
     float legLeft = dist2d(me, g_leg);
     bool detour = now() < g_detourUntil && legLeft > 8.0f;  // a detour runs to its end (or 20 s) before the next leg
-    if (S.legLength > 0 && !detour && legLeft < std::max(30.0f, S.legLength * g_legScale * 0.3f) && dist2d(g_leg, g_target) > 1.0f) {
+    // the next leg when this one is about two thirds done (short road legs must not be replaced at once, 18.11)
+    if (S.legLength > 0 && !detour && legLeft < std::max(10.0f, g_legStart * 0.35f) && dist2d(g_leg, g_target) > 1.0f) {
         g_legScale = std::min(1.0f, g_legScale * 1.5f);  // a leg done: longer again, step by step
         g_leg = nextLeg(me);
         g_best = dist2d(me, g_leg);
+        g_legStart = g_best;
         issue();
         TG_DEBUG("next leg %.1f %.1f, %.0f m", g_leg.x, g_leg.y, g_best);
         return;
@@ -666,6 +672,7 @@ void tick() {
             R.backUntil = now() + 1500;
             g_best = dist2d(me, g_leg);
             g_detourUntil = now() + 20000;
+            g_legStart = g_best;
             TG_INFO("detour to %.1f %.1f (%.0f deg)", g_leg.x, g_leg.y, side);
         } else {
             issue();
