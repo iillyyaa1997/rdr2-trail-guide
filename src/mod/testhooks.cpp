@@ -109,6 +109,27 @@ static void run(const std::vector<std::string>& a) {
             }
         }
         TG_INFO("test: %s %d at %.0f m", model, s, num(1, 25));
+    } else if (cmd == "killpeds" && a.size() >= 2) {  // a hideout test: every human within R m dies (not Arthur)
+        float r = float(num(1, 60));
+        static int peds[512];
+        int n = worldGetAllPeds(peds, 512), k = 0;
+        for (int i = 0; i < n; ++i) {
+            Ped q = peds[i];
+            if (q == pl || !alive(q) || !PED::IS_PED_HUMAN(q) || dist(pos(q), p) > r) continue;
+            ENTITY::SET_ENTITY_HEALTH(q, 0, 0);
+            ++k;
+        }
+        TG_INFO("test: killed %d humans within %.0f m", k, r);
+    } else if (cmd == "peds" && a.size() >= 2) {  // list humans within R m: model, group, distance
+        float r = float(num(1, 60));
+        static int peds[512];
+        int n = worldGetAllPeds(peds, 512);
+        for (int i = 0; i < n; ++i) {
+            Ped q = peds[i];
+            if (q == pl || !alive(q) || !PED::IS_PED_HUMAN(q) || dist(pos(q), p) > r) continue;
+            TG_INFO("test: ped %d model 0x%08X group 0x%08X at %.0f m", q, ENTITY::GET_ENTITY_MODEL(q),
+                    PED::GET_PED_RELATIONSHIP_GROUP_HASH(q), dist(pos(q), p));
+        }
     } else if (cmd == "clean") {
         for (Ped& s : g_spawned)
             if (exists(s)) PED::DELETE_PED(&s);
