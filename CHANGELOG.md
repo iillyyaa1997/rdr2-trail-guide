@@ -1,6 +1,11 @@
 # Changelog
 
 ## 0.1.1 — 2026-11-18
+- Follows roads: legs along the game's road network while a road near Arthur heads toward the waypoint, across country
+  otherwise (FollowRoads, RoadReach). Test ride Strawberry → Dakota River, 1385 m at the gallop step: 9.5 min, no falls,
+  a few detours (before roads and the careful gallop the same route threw Arthur 3 times).
+- Paths are cut for the horse's body first, for Arthur after two misses; a trot when no path is found.
+- The next leg starts at about two thirds of the current one.
 - Careful gallop: at the gallop step the horse still trots on bends and where the path winds through trees or rocks (a
   gallop through woods threw Arthur against a tree in a test ride). CarefulGallop=0 turns it off.
 

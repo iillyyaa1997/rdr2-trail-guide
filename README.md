@@ -12,6 +12,9 @@ moment you move the stick yourself.
 | Next speed (while it runs) | D-pad right | L |
 | Take over | move the left stick | W / A / S / D |
 
+The route follows roads where a road heads your way and goes across country around obstacles elsewhere; at the
+gallop step the horse still trots on bends and through woods.
+
 Speeds: walk, trot, gallop on horseback; walk, run, sprint on foot; slow, medium, fast in a wagon. All buttons, keys
 and speeds are in `TrailGuide.ini`.
 

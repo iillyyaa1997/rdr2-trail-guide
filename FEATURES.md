@@ -18,10 +18,12 @@ Status: ✅ works in game (checked, date) · 🟡 built, partly checked · ⬜ b
   as seen from the camera
 - ✅ On foot: the game's navmesh walk (checked 17.11: 40 m, 1.4 m/s)
 - ✅ Driving a wagon or a coach: the same reins (CART01, 4.5–5 m/s at the middle speed, 17.11)
-- 🟡 Long trips in legs of 150 m (the navmesh is only near Arthur): 1.4 km test rode 250 m of open ground at a
-  gallop, then got stuck in rocks; fixed stuck detection + back-away/detours after that, not re-ridden ⬜
-- 🚫 Following roads like the GPS line: the game gives no way to read its route, and the road snap native returned
-  nothing (17.11). The path goes across country around obstacles
+- ✅ Long trips: Strawberry → Dakota River 1385 m at the gallop step in 9.5 min, no falls, detours around rocks and the
+  river bank (18.11); on foot 470 m at a sprint (6.8 m/s) to the end (18.11)
+- ✅ Follows roads (the game's road network for wagons) while a road near Arthur heads toward the waypoint; across
+  country otherwise. The GPS line itself cannot be read, so it is not exactly the game's route
+- ✅ Careful gallop: a trot on bends, among trees and rocks and where no path is found (a gallop there threw Arthur 3
+  times on 18.11 before this)
 
 ## Speed
 - ✅ Three speeds, next one with D-pad right / L (checked: L switched trot → gallop 17.11)
