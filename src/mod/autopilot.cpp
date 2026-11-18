@@ -35,6 +35,7 @@ struct Settings {
     bool steerCamera = true;  // the stick as seen from the camera (window 17.11: a forward pad stick turned the horse to
                               // the camera's view and walked it there); 'horse' = relative to the horse's nose
     bool padSteer = true;      // also steer through the gamepad (XInput override), not only the game's control values
+    bool carefulGallop = true; // a trot on bends and among obstacles even at the gallop step
 };
 static Settings S;
 static int g_stepNow[4] = {0, 1, 1, 1};  // current speed per mode (a change stays until the game restarts)
@@ -67,6 +68,7 @@ void init(const KvFile& ini) {
     S.steerDeg = float(ini.getFloat("SteerDegrees", 35));
     S.steerCamera = ini.get("SteerRelativeTo", "camera") != "horse";
     S.padSteer = ini.getBool("PadSteering", true);
+    S.carefulGallop = ini.getBool("CarefulGallop", true);
     if (S.padSteer) input::padHookInstall();
     TG_INFO("reins: gaits %.1f/%.1f/%.1f m/s, steer %s, pad steering %s", S.gait[0], S.gait[1], S.gait[2],
             S.steerCamera ? "camera" : "horse", S.padSteer ? input::padHookInfo().c_str() : "off");
@@ -314,6 +316,15 @@ static void reinsDrive(Entity horse, Mode mode) {
         ud = 1.0f;
     }
     int step = g_stepNow[int(mode)];
+    // careful gallop: on a bend or where the path points come thick (woods, rocks) the horse goes at a trot — a gallop
+    // there threw Arthur against a tree (18.11, the path is cut for a man, narrower than a horse)
+    if (step == 2 && S.carefulGallop) {
+        float bend = std::fabs(err);
+        int thick = 0;
+        for (size_t i = R.idx; i < R.pts.size() && i < R.idx + 4; ++i)
+            if (dist2d(hp, R.pts[i]) < 30.0f) ++thick;
+        if (bend > 20.0f || thick >= 3) step = 1;
+    }
     float v = ENTITY::GET_ENTITY_SPEED(horse), vt = mode == Mode::Wagon ? S.wagonGait[step] : S.gait[step];
     // speed: a tap on the speed button only once the horse moves and faces the way (taps at a standstill piled up
     // into a gallop at the start, 17.11), a short pull when it runs faster than the chosen gait
