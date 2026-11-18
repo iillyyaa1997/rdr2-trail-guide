@@ -61,8 +61,12 @@ static void drive(float speed) {  // a new speed without restarting the task (re
 }
 
 static int g_respawns = 0;
-static bool g_everMoved = false;
+static bool g_everMoved = false, g_tasked = false;
 static Vector3 g_spawnPos;
+static float g_box[4];  // the road network from Arthur to the waypoint, kept loaded (the game streams it only around
+                        // the player; in Strawberry the driver never set off for Valentine, 2 km away)
+
+static void requestNodes() { PATH::REQUEST_PATH_NODES_IN_AREA_THIS_FRAME(g_box[0], g_box[1], g_box[2], g_box[3]); }
 
 static bool spawnAt(const Vector3& from, const Vector3& target, float aheadM) {
     stop();
@@ -114,7 +118,12 @@ static bool spawnAt(const Vector3& from, const Vector3& target, float aheadM) {
     g_lastMovePos = node;
     g_movedAt = now();
     g_nextSpeed = now() + 3000;
-    task(8.0f);
+    g_box[0] = std::min(node.x, target.x) - 300.0f;
+    g_box[1] = std::min(node.y, target.y) - 300.0f;
+    g_box[2] = std::max(node.x, target.x) + 300.0f;
+    g_box[3] = std::max(node.y, target.y) + 300.0f;
+    g_tasked = false;
+    requestNodes();
     TG_INFO("pacer: cart on the road at %.1f %.1f (%.0f m from Arthur, heading %.0f), team %d", node.x, node.y,
             dist2d(node, from), heading, int((g_team[0] != 0) + (g_team[1] != 0)));
     return true;
@@ -152,6 +161,18 @@ void tick(const Vector3& me, float mySpeed) {
         hide(g_driver);
         for (Ped h : g_team) hide(h);
     }
+    requestNodes();
+    if (!g_tasked) {  // drive once the roads to the waypoint are in (5 s at most)
+        bool loaded = PATH::ARE_NODES_LOADED_FOR_AREA(g_box[0], g_box[1], g_box[2], g_box[3]);
+        if (!loaded && t - g_startedAt < 5000) return;
+        g_tasked = true;
+        g_startedAt = t;
+        g_movedAt = t;
+        g_nextSpeed = t + 3000;
+        TG_INFO("pacer: roads %s for %.0f x %.0f m, the cart sets off", loaded ? "loaded" : "NOT loaded in 5 s",
+                g_box[2] - g_box[0], g_box[3] - g_box[1]);
+        task(8.0f);
+    }
     if (t >= g_nextCrumb) {
         g_nextCrumb = t + 250;
         if (g_crumbs.empty() || dist2d(g_crumbs.back(), c) > 8.0f) g_crumbs.push_back(c);
@@ -167,6 +188,10 @@ void tick(const Vector3& me, float mySpeed) {
                 TASK::GET_SCRIPT_TASK_STATUS(g_driver, MISC::GET_HASH_KEY("SCRIPT_TASK_VEHICLE_DRIVE_TO_DESTINATION"), true));
     }
     if (!g_everMoved && dist2d(c, g_spawnPos) > 3.0f) g_everMoved = true;
+    if (g_speedSet < 1.0f) {  // waiting for Arthur on purpose: not a cart that cannot move
+        g_movedAt = t;
+        if (!g_everMoved) g_startedAt = t;
+    }
     // never moved off its spot (18.11 in Strawberry: stood in town for good): a new cart further along, twice
     if (!g_everMoved && t - g_startedAt > 7000 && g_respawns < 2) {
         ++g_respawns;
