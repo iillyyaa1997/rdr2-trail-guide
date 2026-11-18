@@ -1,2 +1,2 @@
 #pragma once
-#define TG_VERSION "0.1.1"
+#define TG_VERSION "0.1.2"

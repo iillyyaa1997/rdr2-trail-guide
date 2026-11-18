@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.2 — 2026-11-18
+- Notices show: «Автопилот: …» never appeared before (the game's help-text call threw on short buffers).
+- A scared horse ends the autopilot at once («конь испугался — поводья у тебя») instead of being steered back; that
+  spin threw Arthur twice near Saint Denis. The horse may not buck Arthur off while it rides (NoBucking).
+- Look-ahead: a ray ahead of the horse or the team (up to ~2 s of travel) slows it before trees, fences, rocks, wagons.
+- Speed: a tap only when the last one stopped adding speed; too fast = the stick let go for a moment.
+- A wagon off the road goes slowly (one tipped on a bank).
+- Test rounds 18.11: Valentine → Emerald gallop, Strawberry → Valentine gallop, forest gallop and trot, town walk and
+  run, field sprint, road wagon 1.5 km arrived; Emerald → Saint Denis stops on a spook instead of a fall.
+
 ## 0.1.1 — 2026-11-18
 - Follows roads: legs along the game's road network while a road near Arthur heads toward the waypoint, across country
   otherwise (FollowRoads, RoadReach). Test ride Strawberry → Dakota River, 1385 m at the gallop step: 9.5 min, no falls,

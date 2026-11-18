@@ -375,7 +375,8 @@ static void reinsDrive(Entity horse, Mode mode) {
         R.nextProbe = t + 100;
         float hr = ENTITY::GET_ENTITY_HEADING(horse) * 0.0174533f;
         float fx = -std::sin(hr), fy = std::cos(hr);
-        float start = mode == Mode::Wagon ? 3.5f : 1.8f, len = 3.0f + vNow * 1.2f;
+        // ~2 s of travel at speed: at 8.9 m/s a hit 15 m ahead came too late for a trot (18.11)
+        float start = mode == Mode::Wagon ? 3.5f : 1.8f, len = 3.0f + vNow * (vNow > 6.0f ? 2.0f : 1.2f);
         Vector3 a(hp.x + fx * start, hp.y + fy * start, hp.z + 0.3f);
         Vector3 b(hp.x + fx * (start + len), hp.y + fy * (start + len), hp.z + 0.3f);
         int sh = SHAPETEST::START_EXPENSIVE_SYNCHRONOUS_SHAPE_TEST_LOS_PROBE(a.x, a.y, a.z, b.x, b.y, b.z, 1 | 2 | 4 | 16, horse, 7);
@@ -388,6 +389,7 @@ static void reinsDrive(Entity horse, Mode mode) {
                 TG_DEBUG("look-ahead: something %.0f m ahead at %.1f m/s (entity %d, model 0x%08X)", dist(hp, end), vNow, what,
                          what ? ENTITY::GET_ENTITY_MODEL(what) : 0);
             R.blockedUntil = t + 1500;
+            if (vNow > 6.0f && t >= R.coastUntil) R.coastUntil = t + 400;  // shed speed at once, not only stop tapping
         }
     }
     bool blockedAhead = t < R.blockedUntil;
