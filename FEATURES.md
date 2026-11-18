@@ -32,11 +32,19 @@ Status: ✅ works in game (checked, date) · 🟡 built, partly checked · ⬜ b
 - Starting speeds: horse trot, on foot walk, wagon medium (TrailGuide.ini)
 
 ## Danger
+- ✅ A scared horse (bolting) ends the autopilot at once, «конь испугался — поводья у тебя» (18.11, Saint Denis road: stopped instead of a fall); NoBucking while riding
+- ✅ Notices show on screen (fixed 18.11: before 0.1.2 they never appeared)
 - ✅ A predator within 35 m stops it (wolf at 28 m, 17.11)
 - ✅ Someone attacking you (a bandit at 24 m: «Автопилот: опасность!», 17.11)
 - ⬜ You or the horse getting hurt (a hit within a second; the slow drain of an empty health core no longer counts)
 - ⬜ Falling off the horse
 - Threats that were already near when you started are ignored (so you can ride away from them)
+
+## Test rounds 18.11 (4 rounds, 24 rides)
+- Arrived: Valentine → Emerald gallop (3×), Strawberry → Valentine gallop, forest gallop and trot, Valentine town walk and
+  run, field sprint, road wagon 1.5 km
+- Known: the road west of Saint Denis (≈1755..1831, −600..−745) — horses and wagon teams get scared there (people by
+  the road); the autopilot stops; a gallop can still hit something solid at 9 m/s (look-ahead now ~2 s)
 
 ## Company
 - ✅ The Frontier Dog companion follows at a trot (3–17 m behind, 17.11); at a gallop it falls 80–120 m behind (Frontier
