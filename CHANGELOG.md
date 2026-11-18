@@ -6,6 +6,7 @@
   a few detours (before roads and the careful gallop the same route threw Arthur 3 times).
 - Paths are cut for the horse's body first, for Arthur after two misses; a trot when no path is found.
 - The next leg starts at about two thirds of the current one.
+- The last 100 m before the waypoint at a trot.
 - Careful gallop: at the gallop step the horse still trots on bends and where the path winds through trees or rocks (a
   gallop through woods threw Arthur against a tree in a test ride). CarefulGallop=0 turns it off.
 

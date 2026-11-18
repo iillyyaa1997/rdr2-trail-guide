@@ -23,7 +23,8 @@ Status: ✅ works in game (checked, date) · 🟡 built, partly checked · ⬜ b
 - ✅ Follows roads (the game's road network for wagons) while a road near Arthur heads toward the waypoint; across
   country otherwise. The GPS line itself cannot be read, so it is not exactly the game's route
 - ✅ Careful gallop: a trot on bends, among trees and rocks and where no path is found (a gallop there threw Arthur 3
-  times on 18.11 before this)
+  times on 18.11 before this); the last 100 m at a trot. A fall at speed on rough ground can still happen — then the
+  autopilot stops with «ты не в седле»
 
 ## Speed
 - ✅ Three speeds, next one with D-pad right / L (checked: L switched trot → gallop 17.11)
