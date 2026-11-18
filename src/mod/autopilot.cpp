@@ -348,7 +348,9 @@ static void reinsPath(Entity horse, const Vector3& from) {
 
 static void reinsDrive(Entity horse, Mode mode) {
     Vector3 hp = pos(horse);
-    if (pacer::active()) {  // the cart's track is already a road route: straight at the next track point
+    // on the cart's track (a road): straight at the next track point; off it (the start in a town, 18.11 Strawberry: the
+    // horse stood against a fence 18 m from the road) or after a miss, a navmesh path to that point
+    if (pacer::active() && dist2d(hp, g_leg) < 15.0f && g_tries == 0) {
         R.pts = {g_leg};
         R.idx = 0;
     } else {
