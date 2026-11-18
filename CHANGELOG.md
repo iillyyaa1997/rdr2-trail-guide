@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.1 — 2026-11-18
+- Careful gallop: at the gallop step the horse still trots on bends and where the path winds through trees or rocks (a
+  gallop through woods threw Arthur against a tree in a test ride). CarefulGallop=0 turns it off.
+
 ## 0.1.0 — 2026-11-17
 - Autopilot to the map waypoint: on horseback, on foot, driving a wagon or coach.
 - Start/stop: D-pad left (gamepad, read through XInput) or K; next speed: D-pad right or L.
