@@ -10,6 +10,7 @@
 #include "mod/game.h"
 #include "mod/input.h"
 #include "mod/lang.h"
+#include "mod/pacer.h"
 #include "sdk/natives.gen.h"
 
 namespace tg::autopilot {
@@ -38,6 +39,7 @@ struct Settings {
     bool carefulGallop = true; // a trot on bends and among obstacles even at the gallop step
     bool lookAhead = true;     // a ray ahead slows the horse (or the team) before something solid
     bool noBucking = true;     // the horse may not buck Arthur off while the autopilot rides
+    bool pacer = true;         // follow an invisible AI cart that drives the game's road route (like the GPS line)
     bool roads = true;         // legs along the road network when a road near Arthur heads to the target
     float roadReach = 40;      // a road this close counts as near
 };
@@ -75,6 +77,7 @@ void init(const KvFile& ini) {
     S.carefulGallop = ini.getBool("CarefulGallop", true);
     S.lookAhead = ini.getBool("LookAhead", true);
     S.noBucking = ini.getBool("NoBucking", true);
+    S.pacer = ini.getBool("RoadPacer", true);
     S.roads = ini.getBool("FollowRoads", true);
     S.roadReach = float(ini.getFloat("RoadReach", 40));
     if (S.padSteer) input::padHookInstall();
@@ -344,7 +347,12 @@ static void reinsPath(Entity horse, const Vector3& from) {
 
 static void reinsDrive(Entity horse, Mode mode) {
     Vector3 hp = pos(horse);
-    reinsPath(horse, hp);
+    if (pacer::active()) {  // the cart's track is already a road route: straight at the next track point
+        R.pts = {g_leg};
+        R.idx = 0;
+    } else {
+        reinsPath(horse, hp);
+    }
     while (R.idx + 1 < R.pts.size() && dist2d(hp, R.pts[R.idx]) < S.pointReach) ++R.idx;
     Vector3 aim = R.pts.empty() ? g_leg : R.pts[R.idx];
     R.want = headingTo(hp, aim);
@@ -394,7 +402,7 @@ static void reinsDrive(Entity horse, Mode mode) {
     }
     bool blockedAhead = t < R.blockedUntil;
     // a wagon off the road goes slowly: across a bank on a bend one tipped and threw Arthur out (18.11)
-    if (mode == Mode::Wagon && !g_roadLeg) step = 0;
+    if (mode == Mode::Wagon && !g_roadLeg && !pacer::active()) step = 0;
     if (blockedAhead && step > (mode == Mode::Wagon ? 0 : 1)) step = mode == Mode::Wagon ? 0 : 1;
     // careful gallop: on a bend or where the path points come thick (woods, rocks) the horse goes at a trot — a gallop
     // there threw Arthur against a tree (18.11, the path is cut for a man, narrower than a horse)
@@ -403,7 +411,7 @@ static void reinsDrive(Entity horse, Mode mode) {
         int thick = 0;
         for (size_t i = R.idx; i < R.pts.size() && i < R.idx + 4; ++i)
             if (dist2d(hp, R.pts[i]) < 30.0f) ++thick;
-        bool blind = R.pts.size() <= 1;  // no path found: straight at the leg end, terrain unknown (threw Arthur, 18.11)
+        bool blind = !pacer::active() && R.pts.size() <= 1;  // no path found: straight at the leg end, terrain unknown (threw Arthur, 18.11)
         bool last = dist2d(hp, g_target) < 100.0f;  // the last 100 m at a trot: the waypoint can sit on a ledge (18.11)
         if (bend > 20.0f || thick >= 3 || blind || last) step = 1;
     }
@@ -492,6 +500,11 @@ static void begin(Mode m, const Vector3& target) {
     g_armed = input::moveAmount() < 0.2f;
     g_ignored.clear();
     collectThreats(g_ignored, std::max(S.predatorRange, S.threatRange));
+    if ((m == Mode::Horse || m == Mode::Wagon) && S.pacer && S.roads && dist2d(pos(pl), g_target) > 150.0f &&
+        pacer::start(pos(pl), g_target)) {
+        Vector3 pt;
+        if (pacer::nextPoint(pos(pl), pt)) g_leg = pt;
+    }
     issue();
     if (S.cinematic) {
         CAMERA::SET_CINEMATIC_MODE_ACTIVE(true);
@@ -512,6 +525,7 @@ static void end(const char* why, bool showNotice = true) {
     if (was == Mode::Horse && S.method[int(Mode::Horse)] == 4 && alive(g_horse)) TASK::CLEAR_PED_TASKS(g_horse, false, false);
     TASK::CLEAR_PED_TASKS(pl, false, false);
     input::padRelease();
+    pacer::stop();
     if (g_cineOn) {
         CAMERA::SET_CINEMATIC_MODE_ACTIVE(false);
         g_cineOn = false;
@@ -689,6 +703,22 @@ void tick() {
         nextBuckGuard = now() + 2000;
         PLAYER::SET_MIN_TIME_BEFORE_HORSE_BUCKING(g_horse, 10000);
     }
+    if (pacer::active()) {
+        Vector3 me0 = pos(pl);
+        Entity mover = g_mode == Mode::Horse && g_horse ? g_horse : (g_mode == Mode::Wagon && g_wagon ? g_wagon : pl);
+        pacer::tick(me0, ENTITY::GET_ENTITY_SPEED(mover));
+        Vector3 pt;
+        bool nearEnd = dist2d(me0, g_target) < 150.0f;
+        if (nearEnd || pacer::stuck()) {
+            TG_INFO("pacer: off (%s), legs from here", nearEnd ? "near the waypoint" : "the cart is stuck");
+            pacer::stop();
+            g_leg = nextLeg(me0);
+            g_legStart = dist2d(me0, g_leg);
+            reinsReset();
+        } else if (pacer::nextPoint(me0, pt)) {
+            g_leg = pt;
+        }
+    }
     if (g_mode == Mode::Horse && S.method[m] == 5 && alive(g_horse)) reinsDrive(g_horse, Mode::Horse);
     if (g_mode == Mode::Wagon && S.method[m] == 5 && exists(g_wagon)) reinsDrive(g_wagon, Mode::Wagon);
     if (now() < g_nextCheck) return;
@@ -718,7 +748,7 @@ void tick() {
     float legLeft = dist2d(me, g_leg);
     bool detour = now() < g_detourUntil && legLeft > 8.0f;  // a detour runs to its end (or 20 s) before the next leg
     // the next leg when this one is about two thirds done (short road legs must not be replaced at once, 18.11)
-    if (S.legLength > 0 && !detour && legLeft < std::max(10.0f, g_legStart * 0.35f) && dist2d(g_leg, g_target) > 1.0f) {
+    if (!pacer::active() && S.legLength > 0 && !detour && legLeft < std::max(10.0f, g_legStart * 0.35f) && dist2d(g_leg, g_target) > 1.0f) {
         g_legScale = std::min(1.0f, g_legScale * 1.5f);  // a leg done: longer again, step by step
         g_leg = nextLeg(me);
         g_best = dist2d(me, g_leg);
