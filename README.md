@@ -28,6 +28,14 @@ and speeds are in `TrailGuide.ini`.
 
 The game's cinematic camera works while it runs (or set `CinematicCamera=1` to turn it on automatically).
 
+## Notes
+
+- Horses and wagons are steered through the left stick: the game ignores scripted travel tasks for a horse the player
+  rides. With a gamepad the mod replaces the stick values the game reads through XInput, only while the autopilot runs.
+- The route is the mod's own (the game's GPS line cannot be read by scripts): roads where they head your way, across
+  country around obstacles elsewhere. At speed on rough ground Arthur can still fall off; the autopilot then stops.
+- Tested on RDR2 1.0.1491.50 (Steam).
+
 ## Install
 
 Needs ScriptHookRDR2 (Alexander Blade). Copy `TrailGuide.asi` and `TrailGuide.ini` next to `RDR2.exe`.
