@@ -1,5 +1,6 @@
 #include "mod/input.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -108,8 +109,9 @@ std::string padHookInfo() { return g_hookInfo; }
 struct Button {
     WORD mask = 0;
     int holdMs = 0;
+    int presses = 1, gapMs = 400;  // 2 = a double press (18.11: one press of D-pad down shows the cores in the game)
     bool down = false, fired = false;
-    int downAt = 0;
+    int downAt = 0, count = 0, lastAt = 0;
 };
 static Button g_toggle, g_speed;
 static DWORD g_toggleKey = 0, g_speedKey = 0;
@@ -183,6 +185,8 @@ static void onKey(DWORD key, WORD, BYTE, BOOL, BOOL, BOOL wasDownBefore, BOOL is
 void init(const KvFile& ini) {
     g_toggle.mask = parseButtons(ini.get("ToggleButton", "DPAD_DOWN"));
     g_toggle.holdMs = int(ini.getInt("ToggleHoldMs", 0));
+    g_toggle.presses = std::max(1, int(ini.getInt("TogglePresses", 2)));
+    g_toggle.gapMs = int(ini.getInt("TogglePressGapMs", 400));
     g_speed.mask = parseButtons(ini.get("SpeedButton", "DPAD_RIGHT"));
     g_toggleKey = parseKey(ini.get("ToggleKey", "K"));
     g_speedKey = parseKey(ini.get("SpeedKey", "L"));
@@ -203,8 +207,9 @@ void init(const KvFile& ini) {
     const char* names[6] = {"INPUT_MOVE_LR", "INPUT_MOVE_UD", "INPUT_HORSE_MOVE_LR", "INPUT_HORSE_MOVE_UD",
                             "INPUT_VEH_MOVE_LR", "INPUT_VEH_MOVE_UD"};
     for (int i = 0; i < 6; ++i) g_moveControls[i] = game::hash(names[i]);
-    TG_INFO("input: pad toggle 0x%04X (hold %d ms), speed 0x%04X; keys toggle 0x%02X speed 0x%02X; xinput %s",
-            g_toggle.mask, g_toggle.holdMs, g_speed.mask, g_toggleKey, g_speedKey, g_getState ? "loaded" : "MISSING");
+    TG_INFO("input: pad toggle 0x%04X (hold %d ms, %d presses within %d ms), speed 0x%04X; keys toggle 0x%02X speed 0x%02X; xinput %s",
+            g_toggle.mask, g_toggle.holdMs, g_toggle.presses, g_toggle.gapMs, g_speed.mask, g_toggleKey, g_speedKey,
+            g_getState ? "loaded" : "MISSING");
 }
 
 void shutdown() { keyboardHandlerUnregister(onKey); }
@@ -216,6 +221,12 @@ static bool step(Button& b, WORD buttons, int t) {
     if (down && !b.down) { b.downAt = t; b.fired = false; }
     if (down && !b.fired && t - b.downAt >= b.holdMs) { fire = true; b.fired = true; }
     b.down = down;
+    if (fire && b.presses > 1) {  // count the presses; it fires on the last one within the gap
+        b.count = (b.count > 0 && t - b.lastAt <= b.gapMs) ? b.count + 1 : 1;
+        b.lastAt = t;
+        if (b.count < b.presses) return false;
+        b.count = 0;
+    }
     return fire;
 }
 
