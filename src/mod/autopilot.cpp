@@ -269,7 +269,7 @@ static void reinsPath(Entity horse, const Vector3& from) {
             R.pts = {g_leg};
             R.idx = 0;
             R.request = 0;
-            if (++R.fails >= 2 && g_legScale > 0.3f) {
+            if (++R.fails >= 4 && g_legScale > 0.3f) {  // 2 misses for the horse, 2 for Arthur: a shorter leg
                 g_legScale *= 0.5f;
                 R.fails = 0;
                 g_leg = nextLeg(from);
@@ -279,7 +279,10 @@ static void reinsPath(Entity horse, const Vector3& from) {
         return;
     }
     if (t >= R.nextRequest) {
-        int id = PATH::NAVMESH_REQUEST_PATH(PLAYER::PLAYER_PED_ID(), from.x, from.y, from.z, g_leg.x, g_leg.y, g_leg.z, 0);
+        // the path for the horse's own body first (a man's path squeezes between trees where a galloping horse throws
+        // Arthur, 18.11); after two misses one for Arthur on foot
+        Entity who = (R.fails < 2 && ENTITY::IS_ENTITY_A_PED(horse)) ? horse : PLAYER::PLAYER_PED_ID();
+        int id = PATH::NAVMESH_REQUEST_PATH(who, from.x, from.y, from.z, g_leg.x, g_leg.y, g_leg.z, 0);
         if (id <= 0) {  // the game's request slots are busy: try again shortly
             R.nextRequest = t + 1000;
         } else {
