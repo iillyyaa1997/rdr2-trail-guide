@@ -201,6 +201,7 @@ static Vector3 withGround(Vector3 p, float fallbackZ) {
 static float g_legScale = 1.0f;  // shrinks after paths that are not found (a leg end across a river, 17.11)
 static int g_detourUntil = 0;
 static float g_legStart = 0;     // the leg's length when it was set
+static bool g_roadLeg = false;   // the current leg runs along a road
 
 static bool inWater(const Vector3& p) {
     float w = 0;
@@ -239,8 +240,10 @@ static Vector3 nextLeg(const Vector3& from) {
     float len = S.legLength * g_legScale;
     if (S.legLength <= 0 || d <= len * 1.3f) return withGround(g_target, from.z);
     Vector3 road;
+    g_roadLeg = false;
     if (S.roads && roadLeg(from, len, road)) {
         TG_DEBUG("road leg %.1f %.1f (%.0f m from Arthur)", road.x, road.y, dist2d(road, from));
+        g_roadLeg = true;
         return road;
     }
     float k = len / d;
@@ -386,6 +389,8 @@ static void reinsDrive(Entity horse, Mode mode) {
         }
     }
     bool blockedAhead = t < R.blockedUntil;
+    // a wagon off the road goes slowly: across a bank on a bend one tipped and threw Arthur out (18.11)
+    if (mode == Mode::Wagon && !g_roadLeg) step = 0;
     if (blockedAhead && step > (mode == Mode::Wagon ? 0 : 1)) step = mode == Mode::Wagon ? 0 : 1;
     // careful gallop: on a bend or where the path points come thick (woods, rocks) the horse goes at a trot — a gallop
     // there threw Arthur against a tree (18.11, the path is cut for a man, narrower than a horse)
