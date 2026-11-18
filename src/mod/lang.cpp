@@ -26,6 +26,7 @@ static const Row kRows[] = {
     {"hurt", "Автопилот: тебя ранили", "Autopilot: you are hurt"},
     {"horse_hurt", "Автопилот: конь ранен", "Autopilot: the horse is hurt"},
     {"thrown", "Автопилот: ты не в седле", "Autopilot: you are out of the saddle"},
+    {"spooked", "Автопилот: конь испугался — поводья у тебя", "Autopilot: the horse got scared — you have the reins"},
     {"left_wagon", "Автопилот: ты сошёл с повозки", "Autopilot: you left the wagon"},
     {"stuck", "Автопилот: не могу пройти, дальше веди сам", "Autopilot: cannot get through, take over"},
     {"horse.0", "шагом", "walk"},

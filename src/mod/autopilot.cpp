@@ -384,7 +384,9 @@ static void reinsDrive(Entity horse, Mode mode) {
         Entity what = 0;
         SHAPETEST::GET_SHAPE_TEST_RESULT(sh, &hit, &end, &normal, &what);
         if (hit) {
-            if (t >= R.blockedUntil) TG_DEBUG("look-ahead: something %.0f m ahead at %.1f m/s (entity %d)", dist(hp, end), vNow, what);
+            if (t >= R.blockedUntil)
+                TG_DEBUG("look-ahead: something %.0f m ahead at %.1f m/s (entity %d, model 0x%08X)", dist(hp, end), vNow, what,
+                         what ? ENTITY::GET_ENTITY_MODEL(what) : 0);
             R.blockedUntil = t + 1500;
         }
     }
@@ -663,6 +665,20 @@ void tick() {
     }
     if (S.stopOnDanger) {
         if (const char* why = danger()) return end(why);
+    }
+    // the horse bolts (something scared it): let go at once — steering a bolting horse back toward the waypoint spun it
+    // and threw Arthur at 6-9 m/s near Saint Denis, twice (18.11)
+    if (g_mode == Mode::Horse && alive(g_horse) && PED::IS_PED_FLEEING(g_horse)) {
+        static int peds[256];
+        int n = worldGetAllPeds(peds, 256);
+        Vector3 me = pos(pl);
+        for (int i = 0; i < n; ++i) {
+            Ped p = peds[i];
+            if (p == pl || p == g_horse || !alive(p) || dist(pos(p), me) > 30.0f) continue;
+            TG_INFO("spooked: ped %d model 0x%08X at %.0f m, rel 0x%08X", p, ENTITY::GET_ENTITY_MODEL(p), dist(pos(p), me),
+                    PED::GET_PED_RELATIONSHIP_GROUP_HASH(p));
+        }
+        return end("spooked");
     }
     // a scared horse stopped dead, spun round and bucked Arthur off twice near Saint Denis (18.11): no bucking while
     // the autopilot rides (re-armed every 2 s, it lapses ~10 s after a stop)
