@@ -731,7 +731,7 @@ void tick() {
             g_leg = nextLeg(me0);
             g_legStart = dist2d(me0, g_leg);
             reinsReset();
-        } else if (pacer::nextPoint(me0, pt)) {
+        } else if (now() >= g_detourUntil && pacer::nextPoint(me0, pt)) {  // a detour runs its course first
             g_leg = pt;
         }
     }
