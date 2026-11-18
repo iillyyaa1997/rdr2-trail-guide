@@ -181,7 +181,7 @@ static void onKey(DWORD key, WORD, BYTE, BOOL, BOOL, BOOL wasDownBefore, BOOL is
 }
 
 void init(const KvFile& ini) {
-    g_toggle.mask = parseButtons(ini.get("ToggleButton", "L3"));
+    g_toggle.mask = parseButtons(ini.get("ToggleButton", "DPAD_DOWN"));
     g_toggle.holdMs = int(ini.getInt("ToggleHoldMs", 0));
     g_speed.mask = parseButtons(ini.get("SpeedButton", "DPAD_RIGHT"));
     g_toggleKey = parseKey(ini.get("ToggleKey", "K"));
