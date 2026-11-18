@@ -326,7 +326,8 @@ static void reinsDrive(Entity horse, Mode mode) {
         int thick = 0;
         for (size_t i = R.idx; i < R.pts.size() && i < R.idx + 4; ++i)
             if (dist2d(hp, R.pts[i]) < 30.0f) ++thick;
-        if (bend > 20.0f || thick >= 3) step = 1;
+        bool blind = R.pts.size() <= 1;  // no path found: straight at the leg end, terrain unknown (threw Arthur, 18.11)
+        if (bend > 20.0f || thick >= 3 || blind) step = 1;
     }
     float v = ENTITY::GET_ENTITY_SPEED(horse), vt = mode == Mode::Wagon ? S.wagonGait[step] : S.gait[step];
     // speed: a tap on the speed button only once the horse moves and faces the way (taps at a standstill piled up
