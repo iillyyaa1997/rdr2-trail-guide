@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.5 — 2026-11-19
+- Start/stop: a double press of D-pad down (one press still shows the cores); TogglePresses / TogglePressGapMs.
+- Roads like the GPS line: an invisible cart driven by the game's own driver goes ahead along the road route to the
+  waypoint and the horse (or the team) follows its track (RoadPacer=1). It starts only on a main road, keeps the road
+  network up to the waypoint loaded, waits when Arthur falls behind, and hands over to the old way 150 m before the
+  waypoint or when it gets stuck; off its track the horse takes a path to it.
+- Test rides 19.11: Valentine → Emerald Ranch at a gallop 4.5 min and Emerald Ranch → Valentine at a trot 8.8 min, the
+  whole way behind the cart on the road, no detours.
+
 ## 0.1.2 — 2026-11-18
 - Notices show: «Автопилот: …» never appeared before (the game's help-text call threw on short buffers).
 - A scared horse ends the autopilot at once («конь испугался — поводья у тебя») instead of being steered back; that
